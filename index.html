@@ -22,6 +22,7 @@
   --text: #0f172a; --muted: #64748b; --line: #e2e8f0;
   --ok: #047857; --ok-soft: #d1fae5; --bad: #be123c; --bad-soft: #ffe4e6; --warn: #b45309;
   --topbar: #002664; --primary: #002664;
+  --info: #7c2d12; --info-soft: #ffedd5; --info-line: #f97316;   /* earlier report, info only */
   --fs: 1;   /* text size factor, Innstillinger → Visning */
   color-scheme: light;
 }
@@ -32,6 +33,7 @@
     --text: #e2e8f0; --muted: #94a3b8; --line: #243049;
     --ok: #34d399; --ok-soft: #0f2e25; --bad: #fb7185; --bad-soft: #3a1520; --warn: #fbbf24;
     --topbar: #0f1d3d; --primary: #2a4f99;
+    --info: #fdba74; --info-soft: #3a2210; --info-line: #f97316;
     color-scheme: dark;
   }
 }
@@ -40,6 +42,7 @@
   --text: #e2e8f0; --muted: #94a3b8; --line: #243049;
   --ok: #34d399; --ok-soft: #0f2e25; --bad: #fb7185; --bad-soft: #3a1520; --warn: #fbbf24;
   --topbar: #0f1d3d; --primary: #2a4f99;
+  --info: #fdba74; --info-soft: #3a2210; --info-line: #f97316;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -181,7 +184,11 @@ canvas.sig { display: block; width: 100%; height: 170px; border: 1px solid var(-
 .cl-item input[type=text], .cl-item select { min-height: 40px; padding: 8px 10px; background: var(--card); }
 .mini { border: 1px solid var(--line); background: var(--card); border-radius: 8px; width: 36px; height: 36px; font-weight: 700; flex: none; }
 .mini.del { color: var(--bad); }
-.prev { font-size: calc(12px * var(--fs)); font-weight: 500; color: var(--muted); margin-top: 2px; }
+.prev { font-size: calc(13px * var(--fs)); font-weight: 600; margin-top: 6px; padding: 6px 8px; border-radius: 8px;
+  background: var(--info-soft); color: var(--info); border-left: 4px solid var(--info-line); }
+.prev .same { margin-left: 6px; border: 1px solid var(--info-line); background: var(--card); color: var(--info); border-radius: 8px;
+  padding: 3px 8px; font-size: calc(12px * var(--fs)); font-weight: 700; }
+.prev.none { opacity: .8; font-weight: 500; }
 .newtag, .oldtag { display: inline-block; font-size: calc(11px * var(--fs)); font-weight: 800; padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: middle; }
 .newtag { background: var(--bad); color: #fff; }
 .oldtag { background: #fef3c7; color: #92400e; }
@@ -354,7 +361,19 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
 
   <!-- New document: choose the type -->
   <div class="sheet-bg" x-show="newSheet" x-cloak @click.self="newSheet = null">
-    <div class="sheet">
+    <div class="sheet" x-show="newSheet && newSheet.pickInn" style="max-height:85vh;overflow:auto">
+      <h2>Utflytting: velg innflytting</h2>
+      <p class="muted small" style="margin-top:0">Det som ble registrert ved innflyttingen vises ved hvert punkt, bare til info. Det kommer ikke med i PDF-en. Nøkler og rom kopieres.</p>
+      <template x-for="r in (newSheet && newSheet.pickInn ? innflyttinger() : [])" :key="r.id">
+        <button class="sheet-opt" @click="startUtflytting(r.id)">
+          <b x-text="[r.adresse || 'Uten adresse', r.leilighet].filter(Boolean).join(', ')"></b>
+          <span x-text="['Innflytting ' + formatDate(r.dato), r.leietaker.navn].filter(Boolean).join(' · ')"></span>
+        </button>
+      </template>
+      <button class="btn btn-ghost btn-block" style="margin-bottom:8px" @click="newDoc('Utflytting')">Uten innflytting</button>
+      <button class="btn btn-ghost btn-block" @click="newSheet = null">Avbryt</button>
+    </div>
+    <div class="sheet" x-show="newSheet && !newSheet.pickInn">
       <h2>Hva vil du lage?</h2>
       <button class="sheet-opt" @click="newDoc('Innflytting')"><b>Innflytting</b><span>Flytteprotokoll ved overtakelse: nøkler, rom, signatur.</span></button>
       <button class="sheet-opt" @click="newDoc('Utflytting')"><b>Utflytting</b><span>Flytteprotokoll ved fraflytting: mangler, erstatningskrav, frist.</span></button>
@@ -744,14 +763,14 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
               <label class="f">Dato <input type="date" x-model="report.dato"></label>
             </div>
             <template x-if="compareCandidates().length || report.compareWith">
-              <label class="f compare" style="margin-bottom:0">Sammenlign med tidligere rapport
+              <label class="f compare" style="margin-bottom:0">Vis tidligere rapport (bare til info)
                 <select @change="setCompare($event.target.value)">
-                  <option value="" :selected="!report.compareWith">Ingen sammenligning</option>
+                  <option value="" :selected="!report.compareWith">Ingen</option>
                   <template x-for="c in compareCandidates()" :key="c.id">
                     <option :value="c.id" :selected="report.compareWith === c.id" x-text="c.type + ' ' + formatDate(c.dato) + (c.leietaker.navn ? ' · ' + c.leietaker.navn : '')"></option>
                   </template>
                 </select>
-                <span class="muted small" x-show="ref" style="font-weight:500">Hvert punkt viser hva som ble registrert da. Nye skader merkes «NY SKADE» og i PDF-en.</span>
+                <span class="muted small" x-show="ref" style="font-weight:500">Hvert punkt viser i oransje hva som ble registrert da, bare til info – det kommer ikke med i PDF-en. «Samme som før» kopierer det inn her.</span>
               </label>
             </template>
           </section>
@@ -795,7 +814,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
                     <template x-if="report.type === 'Utflytting'"><input type="number" min="0" inputmode="numeric" x-model="k.pris" @input="k.prisManual = true"></template>
                     <button class="mini del" @click="report.keys.splice(kIdx, 1)" aria-label="Fjern">×</button>
                   </div>
-                  <div class="muted small" x-show="k.prev" x-text="'Ved innflytting: ' + k.prev" style="margin:-2px 0 6px"></div>
+                  <div class="prev" x-show="k.prev" x-text="'(Ved innflytting: ' + k.prev + ')'" style="margin:-2px 0 6px"></div>
                 </div>
               </template>
             </div>
@@ -809,6 +828,8 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
               <label class="f">Målernummer <input type="text" x-model="report.strom.maler" inputmode="numeric"></label>
               <label class="f">Målerstand (kWh) <input type="text" x-model="report.strom.stand" inputmode="decimal"></label>
             </div>
+            <div class="prev" x-show="ref && (ref.strom.maler || ref.strom.stand)" style="margin:-4px 0 10px"
+              x-text="ref ? '(' + refName() + ': ' + [ref.strom.maler && 'måler ' + ref.strom.maler, ref.strom.stand && ref.strom.stand + ' kWh'].filter(Boolean).join(', ') + ')' : ''"></div>
             <div class="photos">
               <template x-for="(p, pIdx) in report.malerFoto" :key="p.id">
                 <div class="photo"><img :src="p.data" alt=""><button @click="report.malerFoto.splice(pIdx, 1)" aria-label="Slett bilde">×</button></div>
@@ -844,13 +865,16 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
                         <template x-if="item.custom"><input type="text" x-model="item.name" placeholder="Beskriv punkt"></template>
                         <span class="newtag" x-show="tagFor(room, item) === 'ny'">NY SKADE</span>
                         <span class="oldtag" x-show="tagFor(room, item) === 'for'">FANTES FRA FØR</span>
-                        <div class="prev" x-show="refMap" x-text="refMap ? prevText(room, item) : ''"></div>
                       </div>
                       <div class="okfeil">
                         <button class="ok" :class="item.status === 'OK' && 'on'" @click="setStatus(item, 'OK')">OK</button>
                         <button class="bad" :class="item.status === 'FEIL' && 'on'" @click="setStatus(item, 'FEIL')">AVVIK</button>
                       </div>
                       <button class="x" x-show="room.kind === HVITEVARER || item.custom" @click="removeItem(room, iIdx)" aria-label="Fjern">×</button>
+                    </div>
+                    <div class="prev" :class="!(prevOf(room, item) || {}).status && 'none'" x-show="refMap">
+                      <span x-text="refMap ? '(' + prevText(room, item) + ')' : ''"></span>
+                      <button class="same" x-show="!report.locked && (prevOf(room, item) || {}).status" @click.stop="sameAsBefore(room, item)">Samme som før</button>
                     </div>
 
                     <div class="defect" x-show="item.status === 'FEIL'">
@@ -893,7 +917,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
                         <template x-for="(p, pIdx) in item.photos" :key="p.id">
                           <div class="photo"><img :src="p.data" alt=""><button @click="removePhoto(item, pIdx)" aria-label="Slett bilde">×</button></div>
                         </template>
-                        <label class="add-photo"><span>📷</span>Bilde
+                        <label class="add-photo"><span>📷</span><b x-text="item.photos.length ? 'Ett bilde til' : 'Bilde'"></b>
                           <input type="file" accept="image/*" multiple class="hidden" @change="addPhotos($event, item)">
                         </label>
                       </div>
@@ -930,6 +954,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
           <section class="card">
             <h2>Generell merknad</h2>
             <textarea x-model="report.merknad" placeholder="Helhetsinntrykk, avtaler med leietaker, frister …"></textarea>
+            <div class="prev" x-show="ref && ref.merknad && ref.merknad.trim()" x-text="ref ? '(' + refName() + ': ' + ref.merknad.trim() + ')' : ''"></div>
           </section>
 
           <!-- Signatures -->

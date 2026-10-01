@@ -1,7 +1,7 @@
 /* Oslo Boligforvalter: all logic for index.html (Alpine.js component + PDF). */
 
 // Bump on every change: the web version compares this with the published app.js to find updates.
-const WEB_VERSION = '2.2.0';
+const WEB_VERSION = '2.3.0';
 
 const REPORT_TYPES = ['Innflytting', 'Utflytting', 'Befaring'];
 const FAGPERSONER = ['Vaktmester', 'Elektriker', 'Rørlegger', 'Maler', 'Snekker', 'Flislegger',
@@ -429,7 +429,8 @@ function pdfText(s) {
     .replace(/[^\n\r\t\x20-\x7E\xA0-\xFF]/g, '?');
 }
 
-function buildPdf(report, settings, roomLabel, ref) {
+/** The earlier report shown while editing is only for the boligforvalter: nothing from it goes into the PDF. */
+function buildPdf(report, settings, roomLabel) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const W = 210, M = 14, BOTTOM = 280;
@@ -444,14 +445,7 @@ function buildPdf(report, settings, roomLabel, ref) {
     it._nr = it.photos.map(p => { photoList.push({ data: p.data, caption: `${roomLabel(room)} - ${it.name}` }); return photoList.length; });
   }
   const refs = it => it._nr && it._nr.length ? ` (Bilde ${it._nr.join(', ')})` : '';
-  const refMap = ref ? refMapOf(ref) : null;
-  const refName = ref ? `${ref.type.toLowerCase()} ${formatDate(ref.dato)}` : '';
-  const tagOf = (room, it) => refMap ? compareTag(refMap[labelIn(report.rooms, room) + '|' + it.name], it) : '';
-  const tagText = t => t === 'ny' ? `Ny siden ${refName}` : t === 'for' ? `Fantes ved ${refName}` : '';
-  const describeIn = (room, it) => {
-    const tag = tagText(tagOf(room, it));
-    return describeItem(it) + refs(it) + (tag ? ` [${tag}]` : '');
-  };
+  const describeIn = (room, it) => describeItem(it) + refs(it);
 
   // Header
   doc.setFillColor(...brand); doc.rect(0, 0, W, 32, 'F');
@@ -506,13 +500,13 @@ function buildPdf(report, settings, roomLabel, ref) {
   let y = doc.lastAutoTable.finalY + 6;
 
   // Keys
-  const keys = (report.keys || []).filter(k => k.navn && (k.antall || k.mangler || k.prev || k.pris));
+  const keys = (report.keys || []).filter(k => k.navn && (k.antall || k.mangler || k.pris));
   if (keys.length || report.nokler.merknad) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
     doc.text('NØKLER', M, y); y += 2;
-    const head = ut ? [['Nøkkeltype', 'Levert', 'Mangler', 'Ved innflytting', 'Kostnad']]
+    const head = ut ? [['Nøkkeltype', 'Levert', 'Mangler', 'Kostnad']]
       : [['Nøkkeltype', report.type === 'Innflytting' ? 'Utlevert' : 'Antall']];
-    const body = keys.map(k => ut ? [k.navn, k.antall || '0', k.mangler || '0', k.prev || '-', Number(k.pris) ? kr(k.pris) : '-'].map(T)
+    const body = keys.map(k => ut ? [k.navn, k.antall || '0', k.mangler || '0', k.pris !== '' ? kr(k.pris) : '-'].map(T)
       : [T(k.navn), T(k.antall || '0')]);
     if (report.nokler.merknad) body.push([{ content: T('Merknad: ' + report.nokler.merknad), colSpan: head[0].length }]);
     doc.autoTable({ startY: y, head, body, margin: { left: M, right: M }, theme: 'striped',
@@ -542,14 +536,6 @@ function buildPdf(report, settings, roomLabel, ref) {
     doc.text(T('Erstatningskrav: ' + kr(claim)), W - M - 4, y + 9, { align: 'right' });
   }
   y += 22;
-
-  if (ref) {
-    let ny = 0, fr = 0;
-    for (const room of report.rooms) for (const it of room.items) { const t = tagOf(room, it); if (t === 'ny') ny++; if (t === 'for') fr++; }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(20);
-    doc.text(T(`Sammenlignet med ${refName}: ${ny} nye avvik, ${fr} fantes fra før.`), M, y - 3);
-    y += 5;
-  }
 
   // Defects grouped by trade: doubles as the order list.
   const hastRank = { 'Akutt': 0, 'Snart': 1, 'Kan vente': 2 };
@@ -1028,6 +1014,11 @@ function app() {
     },
     /** "+ Ny": pick the document type; from a flat the address is filled in. */
     async newDoc(type, b) {
+      // From the start screen: let the user pick the innflytting to look back at, or none.
+      if (type === 'Utflytting' && !b && this.newSheet && !this.newSheet.pickInn && this.innflyttinger().length) {
+        this.newSheet = { pickInn: true };
+        return;
+      }
       this.newSheet = null;
       if (type === 'Utflytting' && b) {
         const inn = b.docs.find(d => d.type === 'Innflytting');
@@ -1036,6 +1027,10 @@ function app() {
       const r = newReportData(type);
       if (b) { r.adresse = b.adresse; r.leilighet = b.leilighet; }
       this.edit(r);
+    },
+    innflyttinger() {
+      return this.reports.filter(r => r.type === 'Innflytting')
+        .sort((a, c) => (a.adresse || '').localeCompare(c.adresse || '', 'nb') || (c.dato || '').localeCompare(a.dato || ''));
     },
     /** Utflytting from an innflytting: address, keys and rooms are copied and compared. */
     async startUtflytting(id) {
@@ -1049,7 +1044,8 @@ function app() {
       r.rooms = src.rooms.map(room => ({ id: uid(), kind: room.kind, name: room.name,
         items: room.items.map(it => blankItem({ name: it.name, options: [...it.options], fagperson: it.fagperson, custom: it.custom })) }));
       this.edit(r);
-      this.toast('Utflytting startet fra innflyttingen ' + formatDate(src.dato));
+      this.newSheet = null;
+      this.toast('Innflyttingen ' + formatDate(src.dato) + ' vises ved hvert punkt – bare til info');
     },
     edit(r) {
       this.report = upgradeReport(r);
@@ -1136,11 +1132,23 @@ function app() {
     prevText(room, item) {
       const p = this.prevOf(room, item);
       if (!p) return 'Ikke med i ' + this.refName();
-      if (p.status === 'OK') return this.refName() + ': OK';
+      if (p.status === 'OK') return this.refName() + ': OK – i orden';
       if (p.status === 'FEIL') return this.refName() + ': AVVIK' + (describeItem(p) ? ' – ' + describeItem(p) : '');
       return this.refName() + ': ikke kontrollert';
     },
     tagFor(room, item) { return compareTag(this.prevOf(room, item), item); },
+    /** Copies what was registered at innflytting into this report. A defect from then is not a claim now. */
+    sameAsBefore(room, item) {
+      const p = this.prevOf(room, item);
+      if (!p || !p.status) return;
+      item.status = p.status;
+      if (p.status === 'FEIL') {
+        for (const o of p.selected) if (!item.options.includes(o)) item.options.push(o);
+        Object.assign(item, { selected: [...p.selected], kommentar: p.kommentar || '', fagperson: p.fagperson, hast: p.hast,
+          belastes: 'Kjent', kostnad: '', prisManual: false });
+      }
+      this.queueSave();
+    },
 
     /* ---- follow-up of defects ---- */
     setTiltak(t, status) {
@@ -1188,8 +1196,11 @@ function app() {
       item.kostnad = sum ? String(sum) : '';
     },
     setBelastes(item, b) { item.belastes = b; this.suggestPris(item); },
+    /** Missing keys -> cost: 0 missing is 0 kr; otherwise missing × price per key (when a price is set). */
     keyChanged(k) {
-      if (!k.prisManual && Number(this.settings.nokkelpris)) k.pris = Number(k.mangler) ? String(Number(k.mangler) * Number(this.settings.nokkelpris)) : '';
+      if (k.prisManual) return;
+      const m = Number(k.mangler), price = Number(this.settings.nokkelpris);
+      k.pris = k.mangler === '' || k.mangler == null ? '' : !m ? '0' : price ? String(m * price) : '';
     },
     addKey() { this.report.keys.push(makeKey('')); },
     allOptions() {
@@ -1323,8 +1334,7 @@ function app() {
       this.busy = 'Lager PDF …';
       await new Promise(res => setTimeout(res, 60));
       try {
-        const doc = buildPdf(toPlain(r), this.settings, room => this.roomLabel(r.rooms.find(x => x.id === room.id)),
-          this.ref ? toPlain(this.ref) : null);
+        const doc = buildPdf(toPlain(r), this.settings, room => this.roomLabel(r.rooms.find(x => x.id === room.id)));
         const name = `${safeFileName(docTitle(r.type))}_${safeFileName(r.adresse)}_${safeFileName(r.leilighet)}_${r.dato}.pdf`.replace(/__+/g, '_');
         const subject = this.fillTemplate(this.settings.epostEmne), text = this.fillTemplate(this.settings.epostTekst);
         if (window.BoligAndroid) {
