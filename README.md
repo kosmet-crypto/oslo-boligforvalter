@@ -18,7 +18,7 @@ unless you share the PDF or export a backup.
 * **People present:** boligforvalter, tenant and, optionally, one more person (e.g. interpreter or colleague) with
   name, role and signature.
 * **Claims (utflytting):** keys delivered / missing with price per key, damages charged to the tenant with prices from
-  your own price list, "known from before – no claim", total claim and the 14-day deadline in the list and the PDF. 0 missing keys fills in 0 kr.
+  your own price list, "known from before – no claim", total claim and the 14-day deadline in the list and the PDF. Delivered keys are compared with innflytting: the missing count is filled in (0 → 0 kr) and all keys back is marked green. Only defects from innflytting are coloured.
 * Room checklists you can edit (rooms, points, typical faults, fagpersoner, appliances). The defaults fit each room
   (e.g. no windows in Bad/WC, wet-room faults there, entrance door and wardrobe in the hall).
 * Per defect: faults, description, fagperson, urgency, cost and who carries it, several photos with date, time and

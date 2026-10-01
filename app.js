@@ -1,7 +1,7 @@
 /* Oslo Boligforvalter: all logic for index.html (Alpine.js component + PDF). */
 
 // Bump on every change: the web version compares this with the published app.js to find updates.
-const WEB_VERSION = '2.3.0';
+const WEB_VERSION = '2.3.1';
 
 const REPORT_TYPES = ['Innflytting', 'Utflytting', 'Befaring'];
 const FAGPERSONER = ['Vaktmester', 'Elektriker', 'Rørlegger', 'Maler', 'Snekker', 'Flislegger',
@@ -169,7 +169,8 @@ function makeAppliance(type) {
   const def = CHECKLIST.appliances.find(a => a.name === type);
   return blankItem({ name: type, options: def ? [...def.defects] : [], fagperson: 'Servicepartner' });
 }
-function makeKey(navn, antall = '') { return { id: uid(), navn, antall, mangler: '', pris: '', prev: '', prisManual: false }; }
+// prev: number of keys handed out at innflytting (utflytting only, info for the boligforvalter).
+function makeKey(navn, antall = '') { return { id: uid(), navn, antall, mangler: '', pris: '', prev: '', prisManual: false, manglerManual: false }; }
 function newReportData(type = 'Innflytting') {
   return {
     id: uid(), created: Date.now(), updated: Date.now(), pdfAt: null,
@@ -1040,7 +1041,7 @@ function app() {
       const r = newReportData('Utflytting');
       Object.assign(r, { adresse: src.adresse, leilighet: src.leilighet, compareWith: src.id, tidligereLeietaker: src.leietaker.navn });
       r.strom.maler = src.strom.maler;
-      r.keys = src.keys.map(k => ({ ...makeKey(k.navn), prev: k.antall ? k.antall + ' stk' : '' }));
+      r.keys = src.keys.map(k => ({ ...makeKey(k.navn), prev: k.antall || '' }));
       r.rooms = src.rooms.map(room => ({ id: uid(), kind: room.kind, name: room.name,
         items: room.items.map(it => blankItem({ name: it.name, options: [...it.options], fagperson: it.fagperson, custom: it.custom })) }));
       this.edit(r);
@@ -1196,6 +1197,13 @@ function app() {
       item.kostnad = sum ? String(sum) : '';
     },
     setBelastes(item, b) { item.belastes = b; this.suggestPris(item); },
+    /** Utflytting: delivered vs. handed out at innflytting fills in the missing count (until typed by hand). */
+    levertChanged(k) {
+      if (this.report.type !== 'Utflytting' || k.prev === '' || k.manglerManual) return;
+      k.mangler = k.antall === '' ? '' : String(Math.max(0, Number(k.prev) - Number(k.antall)));
+      this.keyChanged(k);
+    },
+    allKeysBack(k) { return this.report.type === 'Utflytting' && k.prev !== '' && k.antall !== '' && Number(k.antall) >= Number(k.prev); },
     /** Missing keys -> cost: 0 missing is 0 kr; otherwise missing × price per key (when a price is set). */
     keyChanged(k) {
       if (k.prisManual) return;
