@@ -188,7 +188,11 @@ canvas.sig { display: block; width: 100%; height: 170px; border: 1px solid var(-
   background: var(--info-soft); color: var(--info); border-left: 4px solid var(--info-line); }
 .prev .same { margin-left: 6px; border: 1px solid var(--info-line); background: var(--card); color: var(--info); border-radius: 8px;
   padding: 3px 8px; font-size: calc(12px * var(--fs)); font-weight: 700; }
-.prev.none { opacity: .8; font-weight: 500; }
+.prev-ok { font-size: calc(12px * var(--fs)); font-weight: 500; color: var(--muted); margin-top: 4px; }
+.prev-ok .same { margin-left: 6px; border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 8px;
+  padding: 3px 8px; font-size: calc(12px * var(--fs)); font-weight: 700; }
+.ok-mark { color: var(--ok); margin-left: 6px; }
+input.all-back { border-color: var(--ok); background: var(--ok-soft); }
 .newtag, .oldtag { display: inline-block; font-size: calc(11px * var(--fs)); font-weight: 800; padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: middle; }
 .newtag { background: var(--bad); color: #fff; }
 .oldtag { background: #fef3c7; color: #92400e; }
@@ -306,7 +310,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
           </button>
         </template>
 
-        <footer><span x-text="'Versjon ' + appVersion + ' · Data lagres kun på denne enheten'"></span><br>Utviklet av Ivan St.<br><button class="linkbtn" @click="checkUpdate()">Se etter oppdatering</button></footer>
+        <footer><span x-text="'Versjon ' + appVersion + ' · Data lagres kun på denne enheten'"></span><br>Utviklet av Ivan St. Epicurus001 – Oslo, Norge<br><button class="linkbtn" @click="checkUpdate()">Se etter oppdatering</button></footer>
       </main>
     </div>
   </template>
@@ -478,7 +482,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
         <template x-if="screen === 'setup'">
           <div>
             <button class="btn btn-primary btn-block btn-big" @click="finishSetup()">Start</button>
-            <footer>Oslo Boligforvalter · Utviklet av Ivan St.</footer>
+            <footer>Oslo Boligforvalter · Utviklet av Ivan St. Epicurus001 – Oslo, Norge</footer>
           </div>
         </template>
 
@@ -550,7 +554,8 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
                 <b>Oslo Boligforvalter</b>
                 <div class="muted small">Flytteprotokoll og tilstandsrapport i én app</div>
                 <div x-text="'Versjon ' + appVersion"></div>
-                <div>Utviklet av <b>Ivan St.</b></div>
+                <div>Utviklet av <b>Ivan St. Epicurus001</b></div>
+                <div class="muted small">Oslo, Norge</div>
                 <div class="muted small">Bruker Alpine.js, jsPDF, jsPDF-AutoTable og signature_pad (MIT-lisens).</div>
               </div>
               <button class="btn btn-ghost btn-block" @click="checkUpdate()">Se etter oppdatering</button>
@@ -809,12 +814,15 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
                 <div>
                   <div class="keys-row">
                     <input type="text" x-model="k.navn" placeholder="Nøkkeltype">
-                    <input type="number" min="0" inputmode="numeric" x-model="k.antall">
-                    <template x-if="report.type === 'Utflytting'"><input type="number" min="0" inputmode="numeric" x-model="k.mangler" @input="keyChanged(k)"></template>
+                    <input type="number" min="0" inputmode="numeric" x-model="k.antall" @input="levertChanged(k)" :class="allKeysBack(k) && 'all-back'">
+                    <template x-if="report.type === 'Utflytting'"><input type="number" min="0" inputmode="numeric" x-model="k.mangler" @input="k.manglerManual = true; keyChanged(k)"></template>
                     <template x-if="report.type === 'Utflytting'"><input type="number" min="0" inputmode="numeric" x-model="k.pris" @input="k.prisManual = true"></template>
                     <button class="mini del" @click="report.keys.splice(kIdx, 1)" aria-label="Fjern">×</button>
                   </div>
-                  <div class="prev" x-show="k.prev" x-text="'(Ved innflytting: ' + k.prev + ')'" style="margin:-2px 0 6px"></div>
+                  <div class="prev-ok" x-show="k.prev !== '' && report.type === 'Utflytting'" style="margin:-2px 0 6px">
+                    <span x-text="'(Ved innflytting: ' + k.prev + ' stk)'"></span>
+                    <b class="ok-mark" x-show="allKeysBack(k)">✓ Alle levert</b>
+                  </div>
                 </div>
               </template>
             </div>
@@ -828,7 +836,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
               <label class="f">Målernummer <input type="text" x-model="report.strom.maler" inputmode="numeric"></label>
               <label class="f">Målerstand (kWh) <input type="text" x-model="report.strom.stand" inputmode="decimal"></label>
             </div>
-            <div class="prev" x-show="ref && (ref.strom.maler || ref.strom.stand)" style="margin:-4px 0 10px"
+            <div class="prev-ok" x-show="ref && (ref.strom.maler || ref.strom.stand)" style="margin:-4px 0 10px"
               x-text="ref ? '(' + refName() + ': ' + [ref.strom.maler && 'måler ' + ref.strom.maler, ref.strom.stand && ref.strom.stand + ' kWh'].filter(Boolean).join(', ') + ')' : ''"></div>
             <div class="photos">
               <template x-for="(p, pIdx) in report.malerFoto" :key="p.id">
@@ -872,7 +880,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
                       </div>
                       <button class="x" x-show="room.kind === HVITEVARER || item.custom" @click="removeItem(room, iIdx)" aria-label="Fjern">×</button>
                     </div>
-                    <div class="prev" :class="!(prevOf(room, item) || {}).status && 'none'" x-show="refMap">
+                    <div :class="(prevOf(room, item) || {}).status === 'FEIL' ? 'prev' : 'prev-ok'" x-show="refMap">
                       <span x-text="refMap ? '(' + prevText(room, item) + ')' : ''"></span>
                       <button class="same" x-show="!report.locked && (prevOf(room, item) || {}).status" @click.stop="sameAsBefore(room, item)">Samme som før</button>
                     </div>
@@ -954,7 +962,7 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
           <section class="card">
             <h2>Generell merknad</h2>
             <textarea x-model="report.merknad" placeholder="Helhetsinntrykk, avtaler med leietaker, frister …"></textarea>
-            <div class="prev" x-show="ref && ref.merknad && ref.merknad.trim()" x-text="ref ? '(' + refName() + ': ' + ref.merknad.trim() + ')' : ''"></div>
+            <div class="prev-ok" x-show="ref && ref.merknad && ref.merknad.trim()" x-text="ref ? '(' + refName() + ': ' + ref.merknad.trim() + ')' : ''"></div>
           </section>
 
           <!-- Signatures -->
