@@ -1,7 +1,7 @@
 # CLAUDE.md – Oslo Boligforvalter
 
-Mobile app for a boligforvalter in an Oslo bydel: flytteprotokoll (innflytting, utflytting),
-periodisk kontroll and befaring / tilstandsrapport for municipal flats, with defect follow-up.
+Mobile app for a boligforvalter in an Oslo bydel: flytteprotokoll (innflytting, utflytting)
+and befaring / tilstandsrapport for municipal flats, with defect follow-up.
 Runs as a PWA (GitHub Pages) and as an Android APK (WebView wrapper) from the same code.
 
 ## Working with the owner
@@ -53,12 +53,14 @@ Runs as a PWA (GitHub Pages) and as an Android APK (WebView wrapper) from the sa
 - Rooms in a signed document sit inside `<fieldset disabled>`; room headers are divs so they still open.
 
 ## Data model (short)
-Report: `type` (Innflytting | Utflytting | Periodisk kontroll | Befaring), `adresse`, `leilighet`, `dato`,
+Report: `type` (Innflytting | Utflytting | Befaring), `adresse`, `leilighet`, `dato`,
 `leietaker {navn, telefon, tilstede}`, `ekstra {navn, rolle}`, `keys[]`, `strom`, `malerFoto[]`, `rooms[]`
 (items with status OK/FEIL, options, selected, fagperson, hast, kostnad, belastes Utleier|Leietaker|Kjent,
-photos, tiltak {status Åpen|Bestilt|Utført, bestilt, utfort}), `signatures {forvalter, leietaker, ekstra}`,
+photos, tiltak {status Åpen|Bestilt|Utført, bestilt, utfort, frist}), `signatures {forvalter, leietaker, ekstra}`,
 `locked`, `anon`, `korrigerer`, `compareWith`. Settings hold profile, logo, addresses, editable checklist,
-price list, texts and e-mail templates (`PROFILE_KEYS` travel in profile/backup files, never the PIN).
+price list, texts and e-mail templates (`PROFILE_KEYS` travel in profile/backup files, never the PIN), plus the
+per-device view (`tema`, `tekst`; CSS font sizes are `calc(Npx * var(--fs))`).
+- The work order (`buildOrderPdf`, Avvik → Bestill fra fagperson) must never carry tenant data.
 
 ## Testing
 No test suite in the repo. Test in a real browser with Playwright (installed globally in the container):
