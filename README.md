@@ -1,6 +1,6 @@
 # Oslo Boligforvalter
 
-One mobile app for municipal housing: flytteprotokoll (innflytting, utflytting), periodisk kontroll and
+One mobile app for municipal housing: flytteprotokoll (innflytting, utflytting) and
 befaring / tilstandsrapport, organised per flat (Boliger), with a tab for defects and follow-up (Avvik).
 
 Everything runs on the device. Documents are stored locally (IndexedDB) and never leave the phone
@@ -8,21 +8,31 @@ unless you share the PDF or export a backup.
 
 ## Features
 * **Boliger:** every document grouped by address and flat number; open a flat to see its history and start the next
-  document there. *Start utflytting* copies keys and rooms from the innflytting and compares every point.
+  document there. *Start utflytting* (or *Nytt dokument → Utflytting*, which lets you pick an innflytting or none) copies keys
+  and rooms and shows, in orange, what was registered at innflytting for every point, key, meter and remark. That is
+  only for the boligforvalter: it is never in the PDF. *Samme som før* copies it into the utflytting (a defect then
+  becomes "known from before – no claim").
 * **Signed and locked:** making the PDF signs and locks the document; mistakes are fixed with a *korrigert kopi*.
 * **Personal data:** the PDF has the tenant's full name. The history, backups and Excel export keep the tenant only
   as initials; phone number and the tenant's signature are not kept.
 * **People present:** boligforvalter, tenant and, optionally, one more person (e.g. interpreter or colleague) with
   name, role and signature.
 * **Claims (utflytting):** keys delivered / missing with price per key, damages charged to the tenant with prices from
-  your own price list, "known from before – no claim", total claim and the 14-day deadline in the list and the PDF.
-* Room checklists you can edit (rooms, points, typical faults, fagpersoner, appliances).
+  your own price list, "known from before – no claim", total claim and the 14-day deadline in the list and the PDF. 0 missing keys fills in 0 kr.
+* Room checklists you can edit (rooms, points, typical faults, fagpersoner, appliances). The defaults fit each room
+  (e.g. no windows in Bad/WC, wet-room faults there, entrance door and wardrobe in the hall).
 * Per defect: faults, description, fagperson, urgency, cost and who carries it, several photos with date, time and
-  address printed on them, follow-up Åpen → Bestilt → Utført.
-* Avvik tab across all flats with filters, search and export to Excel (CSV).
+  address printed on them, follow-up Åpen → Bestilt → Utført, and a deadline (from the urgency: Akutt 2 days,
+  Snart 14, Kan vente 90 – can be changed per defect).
+* Avvik tab across all flats: late defects first and marked red (filter *Forsinket*), search, costs per year and per
+  flat, export to Excel (CSV).
+* *Bestill fra fagperson*: a work-order PDF with all open defects for one trade (optionally narrowed by the search),
+  with photos and without the tenant's name; shared by e-mail, then marked as Bestilt.
+* Search on the start screen also finds defects (room, point, description, fagperson); every word must match.
 * PDF with logo, keys, summary, defect list by trade, per-room tables, declaration, signatures and photos.
 * Editable declarations and e-mail subject/text for *Del PDF*; meter photo.
-* First-start wizard, optional PIN, profile and full backup export/import, "Slett alle data", dark mode.
+* First-start wizard, optional PIN, profile and full backup export/import, "Slett alle data", theme
+  (automatic / light / dark) and text size.
 * Works offline, as a web app (PWA) and as an Android APK. "Se etter oppdatering" in both.
 
 ## Web version

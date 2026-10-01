@@ -1,12 +1,15 @@
 /* Oslo Boligforvalter: all logic for index.html (Alpine.js component + PDF). */
 
 // Bump on every change: the web version compares this with the published app.js to find updates.
-const WEB_VERSION = '2.1.1';
+const WEB_VERSION = '2.3.0';
 
-const REPORT_TYPES = ['Innflytting', 'Utflytting', 'Periodisk kontroll', 'Befaring'];
+const REPORT_TYPES = ['Innflytting', 'Utflytting', 'Befaring'];
 const FAGPERSONER = ['Vaktmester', 'Elektriker', 'Rørlegger', 'Maler', 'Snekker', 'Flislegger',
   'Vaskefirma', 'Servicepartner', 'Låsesmed', 'Skadedyrkontroll', 'Leietaker utbedrer'];
 const HASTEGRAD = ['Akutt', 'Snart', 'Kan vente'];
+// Default deadline for fixing a defect, in days from the report date; can be changed per defect.
+const HAST_DAGER = { 'Akutt': 2, 'Snart': 14, 'Kan vente': 90 };
+const HAST_RANK = { 'Akutt': 0, 'Snart': 1, 'Kan vente': 2 };
 // Who carries a defect. 'Leietaker' is a claim against the tenant (erstatningskrav).
 const BELASTES = ['Utleier', 'Leietaker', 'Kjent'];
 const BELASTES_LABEL = { Utleier: 'Slitasje / utleier', Leietaker: 'Skade – krav mot leietaker', Kjent: 'Kjent fra før – ikke krav' };
@@ -20,42 +23,62 @@ const EPOST_TEKST = 'Hei {leietaker},\n\nVedlagt følger {dokument_liten} for {a
 
 // Checklist building blocks: [name, typical defects, default fagperson]
 const P = {
-  vegger:   ['Vegger / tak', ['Skitne vegger', 'Hull', 'Maling trengs', 'Sprekker', 'Fuktskade', 'Mugg'], 'Maler'],
-  gulv:     ['Gulv / lister', ['Riper', 'Hakk / sår', 'Løse lister', 'Misfarging', 'Fuktskade'], 'Snekker'],
-  dorer:    ['Dører / vinduer', ['Dør henger', 'Lås defekt', 'Knust glass', 'Tetningslist', 'Håndtak løst', 'Vindu tett ikke'], 'Snekker'],
-  el:       ['Elektrisk', ['Løs kontakt', 'Mangler deksel', 'Virker ikke', 'Lampe mangler', 'Sikring løser ut'], 'Elektriker'],
-  vask:     ['Rengjøring', ['Ikke rengjort', 'Gjenstander igjen', 'Søppel'], 'Vaskefirma'],
-  benk:     ['Benk / skap', ['Skade på benkeplate', 'Skapdør henger', 'Mangler hyller', 'Fuktskade under vask'], 'Snekker'],
-  kran:     ['Oppvask / kran', ['Drypper', 'Tett avløp', 'Lekkasje'], 'Rørlegger'],
-  vifte:    ['Kjøkkenvifte', ['Virker ikke', 'Skittent filter', 'Lys virker ikke'], 'Elektriker'],
-  wc:       ['WC', ['Renner', 'Løst sete', 'Sprekk', 'Tett'], 'Rørlegger'],
-  servant:  ['Servant / speil', ['Drypper', 'Sprekk', 'Tett avløp', 'Speil skadet'], 'Rørlegger'],
-  dusj:     ['Dusj / sluk', ['Tett sluk', 'Lekkasje', 'Lukt', 'Dusjhode / slange defekt'], 'Rørlegger'],
-  fliser:   ['Fliser / fuger', ['Sprukne fliser', 'Misfargede fuger', 'Silikon løsnet'], 'Flislegger'],
-  ventil:   ['Ventilasjon', ['Virker ikke', 'Skitten', 'Tett ventil'], 'Vaktmester'],
-  rekkverk: ['Rekkverk', ['Løst', 'Rust', 'Skadet'], 'Snekker'],
-  balgulv:  ['Gulv / dekke', ['Råte', 'Sprekker', 'Løse bord'], 'Snekker'],
-  bodlas:   ['Dør / lås', ['Lås defekt', 'Dør skadet', 'Mangler nøkkel'], 'Låsesmed'],
-  royk:     ['Røykvarsler', ['Mangler', 'Virker ikke', 'Batteri tomt', 'Utgått dato'], 'Vaktmester'],
-  slukker:  ['Brannslukker / brannteppe', ['Mangler', 'Utgått kontroll', 'Brukt / tømt'], 'Vaktmester'],
-  romning:  ['Rømningsvei', ['Blokkert', 'Vindu kan ikke åpnes', 'Mangler stige'], 'Vaktmester'],
-  skadedyr: ['Skadedyr', ['Kakerlakker', 'Veggdyr', 'Mus / rotter', 'Maur'], 'Skadedyrkontroll'],
+  vegger:    ['Vegger / tak', ['Skitne vegger', 'Hull', 'Maling trengs', 'Sprekker', 'Fuktskade', 'Mugg'], 'Maler'],
+  gulv:      ['Gulv / lister', ['Riper', 'Hakk / sår', 'Løse lister', 'Misfarging', 'Fuktskade'], 'Snekker'],
+  dor:       ['Innerdør', ['Dør henger', 'Lukker ikke', 'Håndtak løst', 'Hull / skade i dør', 'Karm skadet'], 'Snekker'],
+  vindu:     ['Vinduer', ['Knust glass', 'Lukker ikke tett', 'Tetningslist', 'Beslag / hengsler defekt', 'Kondens mellom glass', 'Barnesikring mangler'], 'Snekker'],
+  ovn:       ['Panelovn / varme', ['Virker ikke', 'Termostat defekt', 'Løs / skadet'], 'Elektriker'],
+  el:        ['Elektrisk', ['Løs kontakt', 'Mangler deksel', 'Virker ikke', 'Lampe mangler', 'Sikring løser ut'], 'Elektriker'],
+  vask:      ['Rengjøring', ['Ikke rengjort', 'Gjenstander igjen', 'Søppel'], 'Vaskefirma'],
+  // Entré
+  ytterdor:  ['Inngangsdør / lås', ['Lås defekt', 'Dør skadet', 'Tetningslist', 'Dørpumpe defekt', 'Dørspion / ringeklokke defekt'], 'Låsesmed'],
+  garderobe: ['Garderobe / skap', ['Skapdør henger', 'Mangler hyller / stang', 'Skadet'], 'Snekker'],
+  // Kjøkken
+  benk:      ['Benk / skap', ['Skade på benkeplate', 'Skapdør henger', 'Mangler hyller', 'Fuktskade under vask'], 'Snekker'],
+  kran:      ['Oppvask / kran', ['Drypper', 'Tett avløp', 'Lekkasje'], 'Rørlegger'],
+  vifte:     ['Kjøkkenvifte', ['Virker ikke', 'Skittent filter', 'Lys virker ikke'], 'Elektriker'],
+  vaskKj:    ['Rengjøring', ['Ikke rengjort', 'Fett på skap / flater', 'Gjenstander igjen', 'Søppel'], 'Vaskefirma'],
+  // Bad / WC: no windows, wet-room defects
+  badvegg:   ['Vegger / tak', ['Mugg', 'Fuktskade', 'Maling flasser', 'Hull', 'Skitne vegger'], 'Maler'],
+  baddor:    ['Dør', ['Dør henger', 'Lås defekt', 'Fuktskadet dør', 'Håndtak løst'], 'Snekker'],
+  wc:        ['WC', ['Renner', 'Løst sete', 'Sprekk', 'Tett'], 'Rørlegger'],
+  servant:   ['Servant / speil', ['Drypper', 'Sprekk', 'Tett avløp', 'Speil skadet'], 'Rørlegger'],
+  dusj:      ['Dusj / sluk', ['Tett sluk', 'Lekkasje', 'Lukt', 'Dusjhode / slange defekt', 'Dusjvegg skadet'], 'Rørlegger'],
+  fliser:    ['Fliser / fuger', ['Sprukne fliser', 'Misfargede fuger', 'Silikon løsnet'], 'Flislegger'],
+  ventil:    ['Ventilasjon', ['Virker ikke', 'Skitten', 'Tett ventil'], 'Vaktmester'],
+  badel:     ['Elektrisk', ['Lampe virker ikke', 'Varmekabel virker ikke', 'Mangler deksel', 'Jordfeilbryter løser ut'], 'Elektriker'],
+  vaskBad:   ['Rengjøring', ['Ikke rengjort', 'Kalk / såperester', 'Hår i sluk', 'Gjenstander igjen'], 'Vaskefirma'],
+  // Vaskerom
+  vrgulv:    ['Gulv / sluk', ['Tett sluk', 'Fuktskade', 'Skadet belegg'], 'Rørlegger'],
+  vmtilk:    ['Tilkobling vaskemaskin', ['Lekker', 'Kran defekt', 'Mangler tilkobling'], 'Rørlegger'],
+  // Bod
+  bodlas:    ['Dør / lås', ['Lås defekt', 'Dør skadet', 'Mangler nøkkel'], 'Låsesmed'],
+  bodlys:    ['Lys', ['Virker ikke', 'Mangler pære'], 'Elektriker'],
+  // Balkong
+  balkdor:   ['Balkongdør', ['Lukker ikke tett', 'Lås / håndtak defekt', 'Knust glass', 'Tetningslist'], 'Snekker'],
+  rekkverk:  ['Rekkverk', ['Løst', 'Rust', 'Skadet'], 'Snekker'],
+  balgulv:   ['Gulv / dekke', ['Råte', 'Sprekker', 'Løse bord'], 'Snekker'],
+  // Brannsikkerhet, skadedyr
+  royk:      ['Røykvarsler', ['Mangler', 'Virker ikke', 'Batteri tomt', 'Utgått dato'], 'Vaktmester'],
+  slukker:   ['Brannslukker / brannteppe', ['Mangler', 'Utgått kontroll', 'Brukt / tømt'], 'Vaktmester'],
+  romning:   ['Rømningsvei', ['Blokkert', 'Vindu kan ikke åpnes', 'Mangler stige'], 'Vaktmester'],
+  skadedyr:  ['Skadedyr', ['Kakerlakker', 'Veggdyr', 'Mus / rotter', 'Maur'], 'Skadedyrkontroll'],
 };
 
 // Default room checklists (keys into P). The user can edit a copy under Innstillinger → Sjekklister.
 const DEFAULT_ROOM_KEYS = [
-  ['Entré / gang',   ['vegger', 'gulv', 'dorer', 'el', 'vask'], true],
-  ['Stue',           ['vegger', 'gulv', 'dorer', 'el', 'vask'], true],
-  ['Kjøkken',        ['vegger', 'gulv', 'benk', 'kran', 'vifte', 'el', 'vask'], true],
-  ['Soverom',        ['vegger', 'gulv', 'dorer', 'el', 'vask'], true],
-  ['Bad',            ['vegger', 'wc', 'servant', 'dusj', 'fliser', 'ventil', 'el', 'vask'], true],
-  ['WC',             ['vegger', 'wc', 'servant', 'ventil', 'vask'], false],
-  ['Vaskerom',       ['vegger', 'gulv', 'kran', 'ventil', 'el', 'vask'], false],
-  ['Bod',            ['bodlas', 'vegger', 'vask'], false],
-  ['Balkong',        ['rekkverk', 'balgulv', 'vask'], false],
+  ['Entré / gang',   ['ytterdor', 'vegger', 'gulv', 'garderobe', 'el', 'vask'], true],
+  ['Stue',           ['vegger', 'gulv', 'dor', 'vindu', 'ovn', 'el', 'vask'], true],
+  ['Kjøkken',        ['vegger', 'gulv', 'vindu', 'benk', 'kran', 'vifte', 'el', 'vaskKj'], true],
+  ['Soverom',        ['vegger', 'gulv', 'dor', 'vindu', 'garderobe', 'ovn', 'el', 'vask'], true],
+  ['Bad',            ['baddor', 'badvegg', 'fliser', 'wc', 'servant', 'dusj', 'ventil', 'badel', 'vaskBad'], true],
+  ['WC',             ['baddor', 'badvegg', 'wc', 'servant', 'ventil', 'vaskBad'], false],
+  ['Vaskerom',       ['vegger', 'vrgulv', 'vmtilk', 'kran', 'ventil', 'el', 'vask'], false],
+  ['Bod',            ['bodlas', 'vegger', 'bodlys', 'vask'], false],
+  ['Balkong',        ['balkdor', 'rekkverk', 'balgulv', 'vask'], false],
   ['Brannsikkerhet', ['royk', 'slukker', 'romning'], true],
   ['Skadedyr',       ['skadedyr'], false],
-  ['Annet rom',      ['vegger', 'gulv', 'dorer', 'el', 'vask'], false],
+  ['Annet rom',      ['vegger', 'gulv', 'dor', 'vindu', 'el', 'vask'], false],
 ];
 const HVITEVARER = 'Hvitevarer';
 
@@ -75,6 +98,7 @@ const DEFAULT_SETTINGS = {
   navn: '', stilling: 'Boligforvalter', bydel: '', kommune: '', telefon: '', epost: '',
   logo: '', adresser: [], pinHash: '', setupDone: false,
   checklist: null,   // null = built-in checklist
+  tema: 'auto', tekst: 'normal',
   stempel: true,     // date and address printed on photos
   priser: [],        // [{ navn, pris }]: price per typical fault, filled in on claims
   nokkelpris: '',    // price per missing key
@@ -85,6 +109,9 @@ const DEFAULT_SETTINGS = {
 const PROFILE_KEYS = ['navn', 'stilling', 'bydel', 'kommune', 'telefon', 'epost', 'logo', 'adresser', 'checklist', 'stempel',
   'priser', 'nokkelpris', 'tekstInn', 'tekstUt', 'tekstAnnen', 'epostEmne', 'epostTekst'];
 const TILTAK_STATUS = ['Åpen', 'Bestilt', 'Utført'];
+// Per-device view settings (not part of the profile).
+const TEMA = { auto: 'Automatisk', lys: 'Lys', mork: 'Mørk' };
+const TEKSTSTR = { normal: ['Normal', 1], stor: ['Stor', 1.15], xstor: ['Ekstra stor', 1.3] };
 
 const LOCK_AFTER_MS = 5 * 60 * 1000;
 
@@ -128,7 +155,7 @@ let CHECKLIST = defaultChecklist();
 function blankItem(extra) {
   return Object.assign({ id: uid(), name: '', status: null, options: [], selected: [], kommentar: '',
     fagperson: 'Vaktmester', hast: 'Snart', kostnad: '', belastes: 'Utleier', photos: [], custom: false,
-    tiltak: { status: 'Åpen', bestilt: '', utfort: '' } }, extra);
+    tiltak: { status: 'Åpen', bestilt: '', utfort: '', frist: '' } }, extra);
 }
 function makeRoom(name) {
   const def = CHECKLIST.rooms.find(r => r.name === name) || { name, items: [] };
@@ -163,7 +190,8 @@ function newReportData(type = 'Innflytting') {
 /** Older reports (and old app versions) lack newer fields; fill them in when a report is loaded. */
 function upgradeReport(r) {
   for (const room of r.rooms) for (const it of room.items) {
-    if (!it.tiltak) it.tiltak = { status: 'Åpen', bestilt: '', utfort: '' };
+    if (!it.tiltak) it.tiltak = { status: 'Åpen', bestilt: '', utfort: '', frist: '' };
+    if (!('frist' in it.tiltak)) it.tiltak.frist = '';
     if (!('prisManual' in it)) it.prisManual = !!it.kostnad;
   }
   if (!('compareWith' in r)) r.compareWith = null;
@@ -205,6 +233,27 @@ function fristDato(dato) {
   d.setDate(d.getDate() + FRIST_DAGER);
   return d;
 }
+/** Deadline for fixing a defect: set by hand, or report date + days for the urgency. "YYYY-MM-DD". */
+function defectFrist(dato, it) {
+  if (it.tiltak && it.tiltak.frist) return it.tiltak.frist;
+  if (!dato) return '';
+  const d = new Date(dato + 'T12:00:00');
+  d.setDate(d.getDate() + (HAST_DAGER[it.hast] ?? 14));
+  return d.toISOString().slice(0, 10);
+}
+/** Days past the deadline (0 when not late or already done). */
+function daysLate(frist, status) {
+  if (!frist || status === 'Utført') return 0;
+  return Math.max(0, Math.round((new Date(today() + 'T12:00:00') - new Date(frist + 'T12:00:00')) / 864e5));
+}
+/** Search: every word must occur somewhere in the text (case-insensitive). */
+function matchesAll(text, q) {
+  const words = normAddr(q).split(' ').filter(Boolean);
+  if (!words.length) return true;
+  const t = normAddr(text);
+  return words.every(w => t.includes(w));
+}
+
 /** Sum of claims against the tenant: damages plus missing keys (utflytting). */
 function claimTotal(r) {
   let t = 0;
@@ -213,8 +262,7 @@ function claimTotal(r) {
   return t;
 }
 function docTitle(type) {
-  return type === 'Innflytting' ? 'Innflyttingsprotokoll' : type === 'Utflytting' ? 'Utflyttingsprotokoll'
-    : type === 'Periodisk kontroll' ? 'Kontrollrapport' : 'Tilstandsrapport';
+  return type === 'Innflytting' ? 'Innflyttingsprotokoll' : type === 'Utflytting' ? 'Utflyttingsprotokoll' : 'Tilstandsrapport';
 }
 
 /** "Soverom 2" when a report has several rooms with the same name. */
@@ -381,7 +429,8 @@ function pdfText(s) {
     .replace(/[^\n\r\t\x20-\x7E\xA0-\xFF]/g, '?');
 }
 
-function buildPdf(report, settings, roomLabel, ref) {
+/** The earlier report shown while editing is only for the boligforvalter: nothing from it goes into the PDF. */
+function buildPdf(report, settings, roomLabel) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const W = 210, M = 14, BOTTOM = 280;
@@ -396,14 +445,7 @@ function buildPdf(report, settings, roomLabel, ref) {
     it._nr = it.photos.map(p => { photoList.push({ data: p.data, caption: `${roomLabel(room)} - ${it.name}` }); return photoList.length; });
   }
   const refs = it => it._nr && it._nr.length ? ` (Bilde ${it._nr.join(', ')})` : '';
-  const refMap = ref ? refMapOf(ref) : null;
-  const refName = ref ? `${ref.type.toLowerCase()} ${formatDate(ref.dato)}` : '';
-  const tagOf = (room, it) => refMap ? compareTag(refMap[labelIn(report.rooms, room) + '|' + it.name], it) : '';
-  const tagText = t => t === 'ny' ? `Ny siden ${refName}` : t === 'for' ? `Fantes ved ${refName}` : '';
-  const describeIn = (room, it) => {
-    const tag = tagText(tagOf(room, it));
-    return describeItem(it) + refs(it) + (tag ? ` [${tag}]` : '');
-  };
+  const describeIn = (room, it) => describeItem(it) + refs(it);
 
   // Header
   doc.setFillColor(...brand); doc.rect(0, 0, W, 32, 'F');
@@ -420,7 +462,7 @@ function buildPdf(report, settings, roomLabel, ref) {
   doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(19);
   doc.text(T(docTitle(report.type).toUpperCase()), titleX, 14);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text(T(report.type === 'Befaring' || report.type === 'Periodisk kontroll' ? report.type.toUpperCase() : 'FLYTTEPROTOKOLL'), titleX, 22);
+  doc.text(T(report.type === 'Befaring' ? 'BEFARING' : 'FLYTTEPROTOKOLL'), titleX, 22);
   if (report.anon) {
     doc.setFontSize(8);
     doc.text('Kopi fra historikk - leietakers personopplysninger er forkortet', titleX, 28);
@@ -458,13 +500,13 @@ function buildPdf(report, settings, roomLabel, ref) {
   let y = doc.lastAutoTable.finalY + 6;
 
   // Keys
-  const keys = (report.keys || []).filter(k => k.navn && (k.antall || k.mangler || k.prev || k.pris));
+  const keys = (report.keys || []).filter(k => k.navn && (k.antall || k.mangler || k.pris));
   if (keys.length || report.nokler.merknad) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
     doc.text('NØKLER', M, y); y += 2;
-    const head = ut ? [['Nøkkeltype', 'Levert', 'Mangler', 'Ved innflytting', 'Kostnad']]
+    const head = ut ? [['Nøkkeltype', 'Levert', 'Mangler', 'Kostnad']]
       : [['Nøkkeltype', report.type === 'Innflytting' ? 'Utlevert' : 'Antall']];
-    const body = keys.map(k => ut ? [k.navn, k.antall || '0', k.mangler || '0', k.prev || '-', Number(k.pris) ? kr(k.pris) : '-'].map(T)
+    const body = keys.map(k => ut ? [k.navn, k.antall || '0', k.mangler || '0', k.pris !== '' ? kr(k.pris) : '-'].map(T)
       : [T(k.navn), T(k.antall || '0')]);
     if (report.nokler.merknad) body.push([{ content: T('Merknad: ' + report.nokler.merknad), colSpan: head[0].length }]);
     doc.autoTable({ startY: y, head, body, margin: { left: M, right: M }, theme: 'striped',
@@ -494,14 +536,6 @@ function buildPdf(report, settings, roomLabel, ref) {
     doc.text(T('Erstatningskrav: ' + kr(claim)), W - M - 4, y + 9, { align: 'right' });
   }
   y += 22;
-
-  if (ref) {
-    let ny = 0, fr = 0;
-    for (const room of report.rooms) for (const it of room.items) { const t = tagOf(room, it); if (t === 'ny') ny++; if (t === 'for') fr++; }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(20);
-    doc.text(T(`Sammenlignet med ${refName}: ${ny} nye avvik, ${fr} fantes fra før.`), M, y - 3);
-    y += 5;
-  }
 
   // Defects grouped by trade: doubles as the order list.
   const hastRank = { 'Akutt': 0, 'Snart': 1, 'Kan vente': 2 };
@@ -655,16 +689,99 @@ function buildPdf(report, settings, roomLabel, ref) {
   return doc;
 }
 
+/**
+ * Work order for one trade: open defects grouped by flat, with photos.
+ * Carries no tenant data: the craftsman only needs the place and the fault.
+ * items: [{ adresse, leilighet, rom, punkt, beskrivelse, hast, frist, photos }]
+ */
+function buildOrderPdf(fagperson, items, settings) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 14;
+  const brand = [0, 38, 100], red = [190, 18, 60], grey = [100, 116, 139];
+  const T = pdfText;
+
+  doc.setFillColor(...brand); doc.rect(0, 0, W, 32, 'F');
+  let titleX = M;
+  if (settings.logo) {
+    doc.setFillColor(255, 255, 255); doc.roundedRect(M, 5, 22, 22, 2, 2, 'F');
+    const lp = doc.getImageProperties(settings.logo);
+    const ls = Math.min(19 / lp.width, 19 / lp.height);
+    doc.addImage(settings.logo, 'PNG', M + (22 - lp.width * ls) / 2, 5 + (22 - lp.height * ls) / 2, lp.width * ls, lp.height * ls);
+    titleX = M + 27;
+  }
+  doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(19);
+  doc.text('BESTILLING', titleX, 14);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  doc.text(T(`${fagperson} · ${formatDate(today())}`), titleX, 22);
+  doc.setFontSize(9);
+  [[settings.bydel, 'bold'], [settings.kommune, 'normal']].filter(([t]) => t).forEach(([t, style], i) => {
+    doc.setFont('helvetica', style);
+    doc.text(T(t), W - M, 11 + i * 5, { align: 'right' });
+  });
+
+  doc.setTextColor(20); doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+  const contact = [[settings.stilling, settings.navn].filter(Boolean).join(': '), settings.telefon, settings.epost].filter(Boolean).join(' · ');
+  const intro = doc.splitTextToSize(T(`Vi ber om utbedring av ${items.length} avvik i listen under. `
+    + 'Ta kontakt for avtale om tilgang til boligen' + (contact ? ` (${contact}).` : '.')
+    + ' Gi beskjed når arbeidet er utført.'), W - 2 * M);
+  doc.text(intro, M, 41);
+  let y = 41 + intro.length * 4.6 + 3;
+
+  const photoList = [];
+  const body = items.map(d => {
+    const nr = d.photos.map(p => { photoList.push({ data: p.data, caption: `${d.adresse} ${d.leilighet} - ${d.rom} - ${d.punkt}` }); return photoList.length; });
+    return [[d.adresse, d.leilighet && 'Leil. ' + d.leilighet].filter(Boolean).join('\n'), `${d.rom}\n${d.punkt}`,
+      (d.beskrivelse || '-') + (nr.length ? ` (Bilde ${nr.join(', ')})` : ''),
+      d.hast + (d.frist ? '\nFrist ' + formatDate(d.frist) : '')].map(T);
+  });
+  doc.autoTable({
+    startY: y, margin: { left: M, right: M },
+    head: [['Adresse', 'Rom / punkt', 'Beskrivelse', 'Hast']], body,
+    headStyles: { fillColor: brand, fontSize: 8 }, styles: { fontSize: 8.5, cellPadding: 1.8, valign: 'top' },
+    columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold' }, 1: { cellWidth: 38 }, 3: { cellWidth: 26 } },
+    didParseCell: d => { if (d.section === 'body' && d.column.index === 3 && String(d.cell.raw).startsWith('Akutt')) { d.cell.styles.textColor = red; d.cell.styles.fontStyle = 'bold'; } },
+  });
+
+  if (photoList.length) {
+    const boxW = 87, boxH = 66, gap = 8, rowH = 82;
+    photoList.forEach((p, i) => {
+      const slot = i % 6;
+      if (slot === 0) {
+        doc.addPage();
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
+        doc.text('BILDER', M, 16);
+      }
+      const x = M + (slot % 2) * (boxW + gap), top = 24 + Math.floor(slot / 2) * rowH;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(20);
+      doc.text(doc.splitTextToSize(T(`Bilde ${i + 1}: ${p.caption}`), boxW)[0], x, top);
+      const props = doc.getImageProperties(p.data);
+      const s = Math.min(boxW / props.width, boxH / props.height);
+      doc.setFillColor(241, 245, 249); doc.rect(x, top + 2, boxW, boxH, 'F');
+      doc.addImage(p.data, 'JPEG', x + (boxW - props.width * s) / 2, top + 2 + (boxH - props.height * s) / 2, props.width * s, props.height * s, undefined, 'FAST');
+    });
+  }
+
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...grey);
+    doc.text(T(`Bestilling · ${fagperson} · ${formatDate(today())}`), M, 290);
+    doc.text(`Side ${i} av ${n}`, W - M, 290, { align: 'right' });
+  }
+  return doc;
+}
+
 /* ---------------- Alpine component ---------------- */
 
 function app() {
   return {
-    REPORT_TYPES, HASTEGRAD, BELASTES, BELASTES_LABEL, TILTAK_STATUS, HVITEVARER, FRIST_DAGER,
+    REPORT_TYPES, HASTEGRAD, BELASTES, BELASTES_LABEL, TILTAK_STATUS, HVITEVARER, FRIST_DAGER, TEMA, TEKSTSTR,
     screen: 'list',
     bolig: null, search: '', newSheet: null,
     _defCl: defaultChecklist(), clOpen: null,
     ref: null, refMap: null,
-    defects: [], defFilter: 'ikke-utfort', defSearch: '',
+    defects: [], defFilter: 'ikke-utfort', defSearch: '', orderSheet: false,
     reports: [],
     report: null,
     openRoom: null,
@@ -675,7 +792,7 @@ function app() {
     pads: {},
     isAndroid: !!window.BoligAndroid,
     appVersion: window.BoligAndroid && BoligAndroid.getVersion ? BoligAndroid.getVersion() : WEB_VERSION,
-    formatDate, stats: reportStats, docTitle, kr, claimTotal, initials, fristDato,
+    formatDate, stats: reportStats, docTitle, kr, claimTotal, initials, fristDato, defectFrist,
 
     async init() {
       try {
@@ -687,6 +804,7 @@ function app() {
       if (!Array.isArray(this.settings.adresser)) this.settings.adresser = [];
       if (!Array.isArray(this.settings.priser)) this.settings.priser = [];
       this.applyChecklist();
+      this.applyView();
       if (!this.settings.setupDone) this.screen = 'setup';
       if (this.settings.pinHash) this.lock();
       await this.loadList();
@@ -723,6 +841,16 @@ function app() {
       await this.saveSettings();
     },
     async saveSettings() { this.applyChecklist(); await DB.put('kv', toPlain(this.settings), 'settings'); },
+    /** Theme and text size: per device, applied to <html>. */
+    applyView() {
+      const el = document.documentElement;
+      if (this.settings.tema === 'lys') el.dataset.theme = 'light';
+      else if (this.settings.tema === 'mork') el.dataset.theme = 'dark';
+      else delete el.dataset.theme;
+      el.style.setProperty('--fs', (TEKSTSTR[this.settings.tekst] || TEKSTSTR.normal)[1]);
+      setTimeout(() => this.resizePads(), 50);
+    },
+    setView(key, value) { this.settings[key] = value; this.applyView(); this.saveSettings(); },
     applyChecklist() { CHECKLIST = this.settings.checklist ? toPlain(this.settings.checklist) : defaultChecklist(); },
     cl() { return this.settings.checklist || this._defCl; },
 
@@ -814,6 +942,11 @@ function app() {
         .map(r => ({ id: r.id, adresse: r.adresse, leilighet: r.leilighet, dato: r.dato, type: r.type,
           leietaker: { navn: initials(r.leietaker.navn) }, pdfAt: r.pdfAt, updated: r.updated, feil: reportStats(r).feil,
           locked: r.locked || 0, claim: claimTotal(upgradeReport(r)),
+          // Defects as searchable lines, shown as hits under the flat when the search matches them.
+          defs: r.rooms.flatMap(room => room.items.filter(it => it.status === 'FEIL').map(it => ({
+            label: `${labelIn(r.rooms, room)} – ${it.name}` + (describeItem(it) ? ': ' + describeItem(it) : ''),
+            text: [labelIn(r.rooms, room), it.name, describeItem(it), it.fagperson, it.tiltak && it.tiltak.status].join(' ') }))),
+          merknad: r.merknad || '',
           open: r.rooms.reduce((n, room) => n + room.items.filter(it => it.status === 'FEIL' && (!it.tiltak || it.tiltak.status !== 'Utført')).length, 0) }))
         .sort((a, b) => b.updated - a.updated);
     },
@@ -848,7 +981,7 @@ function app() {
         if (!map.has(key)) map.set(key, { key, adresse: r.adresse, leilighet: r.leilighet, docs: [] });
         map.get(key).docs.push(r);
       }
-      const q = normAddr(this.search);
+      const q = this.search;
       return [...map.values()]
         .map(b => {
           b.docs.sort((a, c) => (c.dato || '').localeCompare(a.dato || '') || c.updated - a.updated);
@@ -859,7 +992,15 @@ function app() {
           b.drafts = b.docs.filter(d => !d.locked).length;
           return b;
         })
-        .filter(b => !q || normAddr([b.adresse, b.leilighet, b.tenant, ...b.docs.map(d => d.leietaker.navn + ' ' + d.type + ' ' + formatDate(d.dato))].join(' ')).includes(q))
+        .filter(b => {
+          b.hits = [];
+          if (!normAddr(q)) return true;
+          const head = [b.adresse, b.leilighet, b.tenant].join(' ');
+          const docText = d => [d.leietaker.navn, d.type, docTitle(d.type), formatDate(d.dato), d.merknad].join(' ');
+          // Defects that match (together with the address) are listed under the flat.
+          for (const d of b.docs) for (const f of d.defs) if (matchesAll(head + ' ' + f.text, q) && !matchesAll(head, q)) b.hits.push(f.label);
+          return b.hits.length || matchesAll([head, ...b.docs.map(d => docText(d) + ' ' + d.defs.map(f => f.text).join(' '))].join(' '), q);
+        })
         .sort((a, c) => (a.adresse || '~').localeCompare(c.adresse || '~', 'nb') || (a.leilighet || '').localeCompare(c.leilighet || '', 'nb'));
     },
     boligNow() { return this.boliger().find(b => b.key === this.bolig) || { key: this.bolig, adresse: '', leilighet: '', docs: [] }; },
@@ -873,6 +1014,11 @@ function app() {
     },
     /** "+ Ny": pick the document type; from a flat the address is filled in. */
     async newDoc(type, b) {
+      // From the start screen: let the user pick the innflytting to look back at, or none.
+      if (type === 'Utflytting' && !b && this.newSheet && !this.newSheet.pickInn && this.innflyttinger().length) {
+        this.newSheet = { pickInn: true };
+        return;
+      }
       this.newSheet = null;
       if (type === 'Utflytting' && b) {
         const inn = b.docs.find(d => d.type === 'Innflytting');
@@ -881,6 +1027,10 @@ function app() {
       const r = newReportData(type);
       if (b) { r.adresse = b.adresse; r.leilighet = b.leilighet; }
       this.edit(r);
+    },
+    innflyttinger() {
+      return this.reports.filter(r => r.type === 'Innflytting')
+        .sort((a, c) => (a.adresse || '').localeCompare(c.adresse || '', 'nb') || (c.dato || '').localeCompare(a.dato || ''));
     },
     /** Utflytting from an innflytting: address, keys and rooms are copied and compared. */
     async startUtflytting(id) {
@@ -894,7 +1044,8 @@ function app() {
       r.rooms = src.rooms.map(room => ({ id: uid(), kind: room.kind, name: room.name,
         items: room.items.map(it => blankItem({ name: it.name, options: [...it.options], fagperson: it.fagperson, custom: it.custom })) }));
       this.edit(r);
-      this.toast('Utflytting startet fra innflyttingen ' + formatDate(src.dato));
+      this.newSheet = null;
+      this.toast('Innflyttingen ' + formatDate(src.dato) + ' vises ved hvert punkt – bare til info');
     },
     edit(r) {
       this.report = upgradeReport(r);
@@ -926,6 +1077,7 @@ function app() {
       if (this.screen === 'edit') { this.closeReport(); return true; }
       if (this.screen === 'settings') { this.saveSettings(); this.screen = 'list'; return true; }
       if (this.screen === 'checklist') { this.saveSettings(); this.screen = 'settings'; return true; }
+      if (this.orderSheet) { this.orderSheet = false; return true; }
       if (this.screen === 'avvik') { this.closeDefects(); return true; }
       if (this.newSheet) { this.newSheet = null; return true; }
       if (this.screen === 'bolig') { this.bolig = null; this.screen = 'list'; return true; }
@@ -980,11 +1132,23 @@ function app() {
     prevText(room, item) {
       const p = this.prevOf(room, item);
       if (!p) return 'Ikke med i ' + this.refName();
-      if (p.status === 'OK') return this.refName() + ': OK';
+      if (p.status === 'OK') return this.refName() + ': OK – i orden';
       if (p.status === 'FEIL') return this.refName() + ': AVVIK' + (describeItem(p) ? ' – ' + describeItem(p) : '');
       return this.refName() + ': ikke kontrollert';
     },
     tagFor(room, item) { return compareTag(this.prevOf(room, item), item); },
+    /** Copies what was registered at innflytting into this report. A defect from then is not a claim now. */
+    sameAsBefore(room, item) {
+      const p = this.prevOf(room, item);
+      if (!p || !p.status) return;
+      item.status = p.status;
+      if (p.status === 'FEIL') {
+        for (const o of p.selected) if (!item.options.includes(o)) item.options.push(o);
+        Object.assign(item, { selected: [...p.selected], kommentar: p.kommentar || '', fagperson: p.fagperson, hast: p.hast,
+          belastes: 'Kjent', kostnad: '', prisManual: false });
+      }
+      this.queueSave();
+    },
 
     /* ---- follow-up of defects ---- */
     setTiltak(t, status) {
@@ -1032,8 +1196,11 @@ function app() {
       item.kostnad = sum ? String(sum) : '';
     },
     setBelastes(item, b) { item.belastes = b; this.suggestPris(item); },
+    /** Missing keys -> cost: 0 missing is 0 kr; otherwise missing × price per key (when a price is set). */
     keyChanged(k) {
-      if (!k.prisManual && Number(this.settings.nokkelpris)) k.pris = Number(k.mangler) ? String(Number(k.mangler) * Number(this.settings.nokkelpris)) : '';
+      if (k.prisManual) return;
+      const m = Number(k.mangler), price = Number(this.settings.nokkelpris);
+      k.pris = k.mangler === '' || k.mangler == null ? '' : !m ? '0' : price ? String(m * price) : '';
     },
     addKey() { this.report.keys.push(makeKey('')); },
     allOptions() {
@@ -1167,8 +1334,7 @@ function app() {
       this.busy = 'Lager PDF …';
       await new Promise(res => setTimeout(res, 60));
       try {
-        const doc = buildPdf(toPlain(r), this.settings, room => this.roomLabel(r.rooms.find(x => x.id === room.id)),
-          this.ref ? toPlain(this.ref) : null);
+        const doc = buildPdf(toPlain(r), this.settings, room => this.roomLabel(r.rooms.find(x => x.id === room.id)));
         const name = `${safeFileName(docTitle(r.type))}_${safeFileName(r.adresse)}_${safeFileName(r.leilighet)}_${r.dato}.pdf`.replace(/__+/g, '_');
         const subject = this.fillTemplate(this.settings.epostEmne), text = this.fillTemplate(this.settings.epostTekst);
         if (window.BoligAndroid) {
@@ -1222,20 +1388,41 @@ function app() {
         list.push({ key: r.id + it.id, reportId: r.id, itemId: it.id, adresse: r.adresse, leilighet: r.leilighet,
           dato: r.dato, type: r.type, leietaker: r.leietaker.navn, rom: labelIn(r.rooms, room), punkt: it.name,
           beskrivelse: describeItem(it), fagperson: it.fagperson, hast: it.hast, kostnad: it.kostnad, belastes: it.belastes,
-          tiltak: { ...it.tiltak } });
+          tiltak: { ...it.tiltak }, frist: defectFrist(r.dato, it), photos: it.photos.length });
       }
-      const rank = { 'Akutt': 0, 'Snart': 1, 'Kan vente': 2 };
-      list.sort((a, b) => rank[a.hast] - rank[b.hast] || (b.dato || '').localeCompare(a.dato || ''));
       this.defects = list;
+      this.sortDefects();
+    },
+    late(d) { return daysLate(d.frist, d.tiltak.status); },
+    // Late defects first (most late on top), then by urgency and newest report.
+    sortDefects() {
+      this.defects.sort((a, b) => this.late(b) - this.late(a) || HAST_RANK[a.hast] - HAST_RANK[b.hast] || (b.dato || '').localeCompare(a.dato || ''));
     },
     filteredDefects(filter = this.defFilter) {
-      const q = normAddr(this.defSearch);
       return this.defects.filter(d => {
         const st = d.tiltak.status;
         if (filter === 'ikke-utfort' && st === 'Utført') return false;
+        if (filter === 'forsinket' && !this.late(d)) return false;
         if (TILTAK_STATUS.includes(filter) && st !== filter) return false;
-        return !q || normAddr([d.adresse, d.leilighet, d.fagperson, d.rom, d.punkt, d.leietaker].join(' ')).includes(q);
+        return matchesAll([d.adresse, d.leilighet, d.fagperson, d.rom, d.punkt, d.beskrivelse, d.leietaker, d.type, d.hast, d.tiltak.status].join(' '), this.defSearch);
       });
+    },
+    /** Cost per year (report date) and per flat, for the defects matching the search. */
+    costSummary() {
+      const years = {}, flats = {};
+      for (const d of this.filteredDefects('alle')) {
+        const k = Number(d.kostnad) || 0;
+        if (!k || d.belastes === 'Kjent') continue;
+        const y = (d.dato || '').slice(0, 4) || '–';
+        const yr = years[y] || (years[y] = { navn: y, Utleier: 0, Leietaker: 0 });
+        yr[d.belastes] += k;
+        const fk = [d.adresse || 'Uten adresse', d.leilighet].filter(Boolean).join(', ');
+        const fl = flats[fk] || (flats[fk] = { navn: fk, Utleier: 0, Leietaker: 0 });
+        fl[d.belastes] += k;
+      }
+      const tot = x => x.Utleier + x.Leietaker;
+      return { years: Object.values(years).sort((a, b) => b.navn.localeCompare(a.navn)),
+        flats: Object.values(flats).sort((a, b) => tot(b) - tot(a)) };
     },
     defCount(f) { return this.filteredDefects(f).length; },
     async setDefectStatus(d, status) {
@@ -1251,16 +1438,74 @@ function app() {
       const r = await DB.get('reports', d.reportId);
       if (!r) return;
       upgradeReport(r);
-      for (const room of r.rooms) for (const it of room.items) if (it.id === d.itemId) it.tiltak[field] = value;
+      for (const room of r.rooms) for (const it of room.items) if (it.id === d.itemId) {
+        it.tiltak[field] = value;
+        if (field === 'frist') d.frist = defectFrist(r.dato, it);
+      }
       d.tiltak[field] = value;
       await DB.put('reports', r);
+    },
+
+    /* ---- work order to a trade ---- */
+    /** Open defects (matching the search) grouped by fagperson. */
+    orderGroups() {
+      const g = {};
+      for (const d of this.filteredDefects('Åpen')) (g[d.fagperson] || (g[d.fagperson] = [])).push(d);
+      return Object.entries(g).map(([fagperson, list]) => ({ fagperson, list,
+        flats: new Set(list.map(d => normAddr(d.adresse) + '|' + normAddr(d.leilighet))).size,
+        late: list.filter(d => this.late(d)).length }))
+        .sort((a, b) => a.fagperson.localeCompare(b.fagperson, 'nb'));
+    },
+    async sendOrder(group) {
+      this.orderSheet = false;
+      this.busy = 'Lager bestilling …';
+      await new Promise(res => setTimeout(res, 60));
+      try {
+        const reports = {};
+        for (const d of group.list) if (!reports[d.reportId]) reports[d.reportId] = await DB.get('reports', d.reportId);
+        const items = group.list.map(d => {
+          const r = reports[d.reportId];
+          let photos = [];
+          if (r) for (const room of r.rooms) for (const it of room.items) if (it.id === d.itemId) photos = it.photos;
+          return { ...d, photos };
+        }).sort((a, b) => (a.adresse || '').localeCompare(b.adresse || '', 'nb') || (a.leilighet || '').localeCompare(b.leilighet || '', 'nb')
+          || HAST_RANK[a.hast] - HAST_RANK[b.hast]);
+        const doc = buildOrderPdf(group.fagperson, items, this.settings);
+        const name = `Bestilling_${safeFileName(group.fagperson)}_${today()}.pdf`;
+        const subject = `Bestilling – ${group.fagperson} – ${items.length} avvik`;
+        const text = `Hei,\n\nVedlagt følger bestilling på utbedring av ${items.length} avvik `
+          + `(${group.flats} bolig${group.flats === 1 ? '' : 'er'}). Ta kontakt for avtale om tilgang.\n\n`
+          + ['Med vennlig hilsen', this.settings.navn, [this.settings.stilling, this.settings.bydel].filter(Boolean).join(', '), this.settings.telefon].filter(Boolean).join('\n');
+        if (window.BoligAndroid) {
+          const b64 = doc.output('datauristring').split(',')[1];
+          if (BoligAndroid.shareFileText) BoligAndroid.shareFileText(name, 'application/pdf', b64, subject, text);
+          else BoligAndroid.shareFile(name, 'application/pdf', b64);
+        } else {
+          const blob = doc.output('blob');
+          const file = new File([blob], name, { type: 'application/pdf' });
+          this.busy = '';
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try { await navigator.share({ files: [file], title: subject, text }); } catch (e) { /* cancelled */ }
+          } else downloadBlob(blob, name);
+        }
+        this.busy = '';
+        if (confirm(`Merke ${items.length} avvik som bestilt i dag?`)) {
+          for (const d of group.list) await this.setDefectStatus(d, 'Bestilt');
+          this.toast(`${items.length} avvik er merket som bestilt`);
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Kunne ikke lage bestilling: ' + e.message);
+      } finally {
+        this.busy = '';
+      }
     },
     async openFromDefects(d) { this._returnTo = 'avvik'; await this.openReport(d.reportId); },
     exportCsv() {
       const head = ['Adresse', 'Leil.nr', 'Rapportdato', 'Type', 'Leietaker', 'Rom', 'Punkt', 'Beskrivelse', 'Fagperson',
-        'Hastegrad', 'Kostnad', 'Belastes', 'Status', 'Bestilt', 'Utført'];
+        'Hastegrad', 'Frist', 'Dager over frist', 'Kostnad', 'Belastes', 'Status', 'Bestilt', 'Utført'];
       const rows = this.filteredDefects().map(d => [d.adresse, d.leilighet, formatDate(d.dato), d.type, initials(d.leietaker), d.rom,
-        d.punkt, d.beskrivelse, d.fagperson, d.hast, d.kostnad, d.belastes, d.tiltak.status, formatDate(d.tiltak.bestilt), formatDate(d.tiltak.utfort)]);
+        d.punkt, d.beskrivelse, d.fagperson, d.hast, formatDate(d.frist), this.late(d) || '', d.kostnad, d.belastes, d.tiltak.status, formatDate(d.tiltak.bestilt), formatDate(d.tiltak.utfort)]);
       if (!rows.length) return this.toast('Ingen avvik å eksportere');
       // Semicolons and a BOM so Norwegian Excel opens it straight into columns with æøå intact.
       const text = '\ufeff' + [head, ...rows].map(r => r.map(csvCell).join(';')).join('\r\n');
@@ -1321,6 +1566,7 @@ function app() {
       await DB.clear('reports');
       await DB.clear('kv');
       this.settings = { ...DEFAULT_SETTINGS, adresser: [] };
+      this.applyView();
       await this.loadList();
       this.screen = 'setup';
       this.toast('Alle data er slettet');
