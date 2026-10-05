@@ -29,7 +29,7 @@ unless you share the PDF or export a backup.
 * *Bestill fra fagperson*: a work-order PDF with all open defects for one trade (optionally narrowed by the search),
   with photos and without the tenant's name; shared by e-mail, then marked as Bestilt.
 * Search on the start screen also finds defects (room, point, description, fagperson); every word must match.
-* PDF with logo, keys, summary, defect list by trade, per-room tables, declaration, signatures and photos.
+* PDF in a sober letterhead style (white page, logo left, one navy accent, grey hairlines) with logo, keys, summary, defect list by trade, per-room tables, declaration, signatures and photos.
 * Editable declarations and e-mail subject/text for *Del PDF*; meter photo.
 * First-start wizard, optional PIN, profile and full backup export/import, "Slett alle data", theme
   (automatic / light / dark) and text size.

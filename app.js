@@ -1,7 +1,7 @@
 /* Oslo Boligforvalter: all logic for index.html (Alpine.js component + PDF). */
 
 // Bump on every change: the web version compares this with the published app.js to find updates.
-const WEB_VERSION = '2.3.1';
+const WEB_VERSION = '2.4.0';
 
 const REPORT_TYPES = ['Innflytting', 'Utflytting', 'Befaring'];
 const FAGPERSONER = ['Vaktmester', 'Elektriker', 'Rørlegger', 'Maler', 'Snekker', 'Flislegger',
@@ -430,12 +430,72 @@ function pdfText(s) {
     .replace(/[^\n\r\t\x20-\x7E\xA0-\xFF]/g, '?');
 }
 
+// PDF look: white page, one deep navy accent, slate grey for secondary text and hairlines.
+const PDF = { navy: [24, 44, 78], slate: [71, 85, 105], muted: [120, 132, 150], rule: [208, 215, 225], head: [241, 243, 247],
+  red: [176, 32, 52], green: [21, 128, 61] };
+
+/** White letterhead: logo left, title in navy, sender right, navy rule underneath. Returns the y below it. */
+function pdfHeader(doc, settings, title, sub, note, right) {
+  const W = 210, M = 14, T = pdfText;
+  let titleX = M;
+  if (settings.logo) {
+    const lp = doc.getImageProperties(settings.logo);
+    const ls = Math.min(30 / lp.width, 20 / lp.height);
+    const lw = lp.width * ls, lh = lp.height * ls;
+    doc.addImage(settings.logo, 'PNG', M, 8 + (20 - lh) / 2, lw, lh);
+    titleX = M + lw + 6;
+  }
+  doc.setTextColor(...PDF.navy); doc.setFont('helvetica', 'bold'); doc.setFontSize(17);
+  doc.text(T(title), titleX, 16);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...PDF.slate);
+  doc.text(T(sub), titleX, 22);
+  if (note) { doc.setFontSize(7.5); doc.setTextColor(...PDF.muted); doc.text(T(note), titleX, 27); }
+  doc.setFontSize(8.5);
+  right.filter(([t]) => t).forEach(([t, style], i) => {
+    doc.setFont('helvetica', style); doc.setTextColor(...(style === 'bold' ? PDF.navy : PDF.slate));
+    doc.text(T(t), W - M, 12 + i * 4.4, { align: 'right' });
+  });
+  doc.setDrawColor(...PDF.navy); doc.setLineWidth(0.6); doc.line(M, 32, W - M, 32);
+  doc.setLineWidth(0.2);
+  return 38;
+}
+/** Section title in navy small caps style with a hairline; returns the y where content starts. */
+function pdfHeading(doc, text, y, color = PDF.navy) {
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...color);
+  doc.text(pdfText(text), 14, y);
+  doc.setDrawColor(...PDF.rule); doc.setLineWidth(0.2); doc.line(14, y + 1.6, 196, y + 1.6);
+  return y + 3.5;
+}
+/** autoTable with the document style; `opts` styles are merged over it. */
+function pdfTable(doc, opts) {
+  const o = { ...opts };
+  o.theme = 'plain';
+  o.margin = o.margin || { left: 14, right: 14 };
+  o.styles = { fontSize: 8, cellPadding: 1.8, valign: 'top', textColor: 30, lineColor: PDF.rule, lineWidth: { bottom: 0.1 }, ...(opts.styles || {}) };
+  o.headStyles = { fillColor: PDF.head, textColor: PDF.navy, fontStyle: 'bold', fontSize: 8, lineColor: PDF.navy, lineWidth: { bottom: 0.4 }, ...(opts.headStyles || {}) };
+  o.footStyles = { fillColor: PDF.head, textColor: 30, fontStyle: 'bold', fontSize: 8, ...(opts.footStyles || {}) };
+  o.alternateRowStyles = { fillColor: [250, 251, 252] };
+  doc.autoTable(o);
+  return doc.lastAutoTable.finalY;
+}
+/** Hairline and grey text at the bottom of every page. */
+function pdfFooter(doc, text) {
+  const n = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(...PDF.rule); doc.setLineWidth(0.2); doc.line(14, 286, 196, 286);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...PDF.muted);
+    doc.text(pdfText(text), 14, 290);
+    doc.text(`Side ${i} av ${n}`, 196, 290, { align: 'right' });
+  }
+}
+
 /** The earlier report shown while editing is only for the boligforvalter: nothing from it goes into the PDF. */
 function buildPdf(report, settings, roomLabel) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const W = 210, M = 14, BOTTOM = 280;
-  const brand = [0, 38, 100], red = [190, 18, 60], green = [4, 120, 87], grey = [100, 116, 139];
+  const brand = PDF.navy, red = PDF.red, grey = PDF.muted;
   const T = pdfText;
 
   // Number every photo in document order so the text can refer to "Bilde n".
@@ -448,36 +508,12 @@ function buildPdf(report, settings, roomLabel) {
   const refs = it => it._nr && it._nr.length ? ` (Bilde ${it._nr.join(', ')})` : '';
   const describeIn = (room, it) => describeItem(it) + refs(it);
 
-  // Header
-  doc.setFillColor(...brand); doc.rect(0, 0, W, 32, 'F');
-  let titleX = M;
-  if (settings.logo) {
-    // Logos are usually dark, so they sit on a white tile inside the blue band.
-    doc.setFillColor(255, 255, 255); doc.roundedRect(M, 5, 22, 22, 2, 2, 'F');
-    const lp = doc.getImageProperties(settings.logo);
-    const ls = Math.min(19 / lp.width, 19 / lp.height);
-    const lw = lp.width * ls, lh = lp.height * ls;
-    doc.addImage(settings.logo, 'PNG', M + (22 - lw) / 2, 5 + (22 - lh) / 2, lw, lh);
-    titleX = M + 27;
-  }
-  doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(19);
-  doc.text(T(docTitle(report.type).toUpperCase()), titleX, 14);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text(T(report.type === 'Befaring' ? 'BEFARING' : 'FLYTTEPROTOKOLL'), titleX, 22);
-  if (report.anon) {
-    doc.setFontSize(8);
-    doc.text('Kopi fra historikk - leietakers personopplysninger er forkortet', titleX, 28);
-  }
-  doc.setFontSize(9);
-  const right = [
-    [settings.bydel, 'bold'], [settings.kommune, 'normal'],
-    [[settings.stilling, settings.navn].filter(Boolean).join(': '), 'normal'],
-    [[settings.telefon, settings.epost].filter(Boolean).join(' · '), 'normal'],
-  ].filter(([t]) => t);
-  right.forEach(([t, style], i) => {
-    doc.setFont('helvetica', style);
-    doc.text(T(t), W - M, 11 + i * 5, { align: 'right' });
-  });
+  pdfHeader(doc, settings, docTitle(report.type).toUpperCase(), report.type === 'Befaring' ? 'Befaring' : 'Flytteprotokoll',
+    report.anon ? 'Kopi fra historikk - leietakers personopplysninger er forkortet' : '', [
+      [settings.bydel, 'bold'], [settings.kommune, 'normal'],
+      [[settings.stilling, settings.navn].filter(Boolean).join(': '), 'normal'],
+      [[settings.telefon, settings.epost].filter(Boolean).join(' · '), 'normal'],
+    ]);
 
   const lt = report.leietaker;
   const ut = report.type === 'Utflytting';
@@ -496,23 +532,20 @@ function buildPdf(report, settings, roomLabel) {
   doc.autoTable({
     startY: 38, body: info, theme: 'plain', margin: { left: M, right: M },
     styles: { fontSize: 9, cellPadding: 1.4, textColor: 20 },
-    columnStyles: { 0: { fontStyle: 'bold', textColor: grey, cellWidth: 32 }, 2: { fontStyle: 'bold', textColor: grey, cellWidth: 28 } },
+    columnStyles: { 0: { fontStyle: 'bold', textColor: PDF.slate, cellWidth: 32 }, 2: { fontStyle: 'bold', textColor: PDF.slate, cellWidth: 28 } },
   });
   let y = doc.lastAutoTable.finalY + 6;
 
   // Keys
   const keys = (report.keys || []).filter(k => k.navn && (k.antall || k.mangler || k.pris));
   if (keys.length || report.nokler.merknad) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
-    doc.text('NØKLER', M, y); y += 2;
+    y = pdfHeading(doc, 'NØKLER', y);
     const head = ut ? [['Nøkkeltype', 'Levert', 'Mangler', 'Kostnad']]
       : [['Nøkkeltype', report.type === 'Innflytting' ? 'Utlevert' : 'Antall']];
     const body = keys.map(k => ut ? [k.navn, k.antall || '0', k.mangler || '0', k.pris !== '' ? kr(k.pris) : '-'].map(T)
       : [T(k.navn), T(k.antall || '0')]);
     if (report.nokler.merknad) body.push([{ content: T('Merknad: ' + report.nokler.merknad), colSpan: head[0].length }]);
-    doc.autoTable({ startY: y, head, body, margin: { left: M, right: M }, theme: 'striped',
-      headStyles: { fillColor: brand, fontSize: 8 }, styles: { fontSize: 8, cellPadding: 1.6 } });
-    y = doc.lastAutoTable.finalY + 6;
+    y = pdfTable(doc, { startY: y, head, body, styles: { cellPadding: 1.6 } }) + 6;
   }
 
   // Summary
@@ -552,27 +585,22 @@ function buildPdf(report, settings, roomLabel) {
     if (sums.Utleier || sums.Leietaker) {
       foot.push([{ content: T(`Krav mot leietaker: ${kr(sums.Leietaker)}     Utleiers kostnad: ${kr(sums.Utleier)}`), colSpan: 6, styles: { halign: 'right' } }]);
     }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
-    doc.text('AVVIK OG TILTAK', M, y); y += 2;
-    doc.autoTable({
-      startY: y, margin: { left: M, right: M },
+    y = pdfHeading(doc, 'AVVIK OG TILTAK', y);
+    y = pdfTable(doc, {
+      startY: y,
       head: [['Fagperson', 'Rom / punkt', 'Beskrivelse', 'Hast / status', 'Kostnad', 'Belastes']],
       body: defects.map(({ room, it }) => [it.fagperson, `${roomLabel(room)}\n${it.name}`, describeIn(room, it) || '-',
         [it.hast, tiltakText(it.tiltak)].filter(Boolean).join('\n'),
         it.kostnad ? kr(it.kostnad) : '-', { Utleier: 'Utleier', Leietaker: 'Leietaker (krav)', Kjent: 'Kjent - ikke krav' }[it.belastes] || it.belastes].map(T)),
       foot, showFoot: 'lastPage',
-      headStyles: { fillColor: red, fontSize: 8 }, footStyles: { fillColor: [255, 228, 230], textColor: 20, fontSize: 8 },
-      styles: { fontSize: 8, cellPadding: 1.8, valign: 'top' },
-      columnStyles: { 0: { cellWidth: 26, fontStyle: 'bold' }, 1: { cellWidth: 34 }, 3: { cellWidth: 20 }, 4: { cellWidth: 20, halign: 'right' }, 5: { cellWidth: 19 } },
+      columnStyles: { 0: { cellWidth: 26, fontStyle: 'bold', textColor: PDF.navy }, 1: { cellWidth: 34 }, 3: { cellWidth: 20 }, 4: { cellWidth: 20, halign: 'right' }, 5: { cellWidth: 19 } },
       didParseCell: d => { if (d.section === 'body' && d.column.index === 3 && String(d.cell.raw).startsWith('Akutt')) { d.cell.styles.textColor = red; d.cell.styles.fontStyle = 'bold'; } },
-    });
-    y = doc.lastAutoTable.finalY + 8;
+    }) + 8;
   }
 
   // Per room
   if (y > BOTTOM - 30) { doc.addPage(); y = 20; }
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
-  doc.text('KONTROLL PER ROM', M, y); y += 2;
+  y = pdfHeading(doc, 'KONTROLL PER ROM', y);
   for (const room of report.rooms) {
     const rows = room.items.filter(it => it.status).map(it => [
       it.name, it.status === 'OK' ? 'OK' : 'AVVIK',
@@ -580,19 +608,17 @@ function buildPdf(report, settings, roomLabel) {
       it.status === 'FEIL' ? it.fagperson : '-',
     ].map(T));
     if (!rows.length) continue;
-    doc.autoTable({
-      startY: y, margin: { left: M, right: M },
+    y = pdfTable(doc, {
+      startY: y,
       head: [[T(roomLabel(room).toUpperCase()), 'Status', 'Merknad', 'Tiltak']],
       body: rows,
-      headStyles: { fillColor: room.kind === 'Hvitevarer' ? green : brand, fontSize: 8 },
-      styles: { fontSize: 8, cellPadding: 1.6, valign: 'top' },
+      styles: { cellPadding: 1.6 },
       columnStyles: { 0: { cellWidth: 42 }, 1: { cellWidth: 16, fontStyle: 'bold' }, 3: { cellWidth: 30 } },
       didParseCell: d => {
         if (d.section !== 'body' || d.column.index !== 1) return;
-        d.cell.styles.textColor = d.cell.raw === 'AVVIK' ? red : green;
+        d.cell.styles.textColor = d.cell.raw === 'AVVIK' ? red : PDF.green;
       },
-    });
-    y = doc.lastAutoTable.finalY + 5;
+    }) + 5;
   }
   const unchecked = st.total - st.checked;
   if (unchecked) {
@@ -606,8 +632,7 @@ function buildPdf(report, settings, roomLabel) {
     const lines = doc.splitTextToSize(T(report.merknad.trim()), W - 2 * M);
     if (y + 10 + lines.length * 4.2 > BOTTOM) { doc.addPage(); y = 20; }
     y += 3;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
-    doc.text('GENERELL MERKNAD', M, y); y += 6;
+    y = pdfHeading(doc, 'GENERELL MERKNAD', y) + 2.5;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(20);
     doc.text(lines, M, y); y += lines.length * 4.2 + 2;
   }
@@ -629,7 +654,7 @@ function buildPdf(report, settings, roomLabel) {
   const sigRows = report.ekstra && report.ekstra.navn ? 106 : 60;
   if (y + legal.length * 4 + sigRows > BOTTOM) { doc.addPage(); y = 20; }
   y += 4;
-  doc.setFillColor(239, 246, 255); doc.rect(M, y, W - 2 * M, legal.length * 4 + 6, 'F');
+  doc.setFillColor(...PDF.head); doc.rect(M, y, W - 2 * M, legal.length * 4 + 6, 'F');
   doc.setFillColor(...brand); doc.rect(M, y, 1.2, legal.length * 4 + 6, 'F');
   doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(30);
   doc.text(legal, M + 5, y + 5.5);
@@ -661,8 +686,7 @@ function buildPdf(report, settings, roomLabel) {
       const slot = i % 6;
       if (slot === 0) {
         doc.addPage();
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
-        doc.text('BILDEDOKUMENTASJON', M, 16);
+        pdfHeading(doc, 'BILDEDOKUMENTASJON', 16);
       }
       const x = M + (slot % 2) * (boxW + gap);
       const top = 24 + Math.floor(slot / 2) * rowH;
@@ -678,14 +702,7 @@ function buildPdf(report, settings, roomLabel) {
     }
   }
 
-  // Footer
-  const n = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= n; i++) {
-    doc.setPage(i);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(150);
-    doc.text(T(`${docTitle(report.type)} · ${report.adresse || ''} · ${formatDate(report.dato)}`), M, 290);
-    doc.text(`Side ${i} av ${n}`, W - M, 290, { align: 'right' });
-  }
+  pdfFooter(doc, `${docTitle(report.type)} · ${report.adresse || ''} · ${formatDate(report.dato)}`);
   for (const room of report.rooms) for (const it of room.items) delete it._nr;
   return doc;
 }
@@ -699,27 +716,11 @@ function buildOrderPdf(fagperson, items, settings) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const W = 210, M = 14;
-  const brand = [0, 38, 100], red = [190, 18, 60], grey = [100, 116, 139];
+  const red = PDF.red;
   const T = pdfText;
 
-  doc.setFillColor(...brand); doc.rect(0, 0, W, 32, 'F');
-  let titleX = M;
-  if (settings.logo) {
-    doc.setFillColor(255, 255, 255); doc.roundedRect(M, 5, 22, 22, 2, 2, 'F');
-    const lp = doc.getImageProperties(settings.logo);
-    const ls = Math.min(19 / lp.width, 19 / lp.height);
-    doc.addImage(settings.logo, 'PNG', M + (22 - lp.width * ls) / 2, 5 + (22 - lp.height * ls) / 2, lp.width * ls, lp.height * ls);
-    titleX = M + 27;
-  }
-  doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(19);
-  doc.text('BESTILLING', titleX, 14);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text(T(`${fagperson} · ${formatDate(today())}`), titleX, 22);
-  doc.setFontSize(9);
-  [[settings.bydel, 'bold'], [settings.kommune, 'normal']].filter(([t]) => t).forEach(([t, style], i) => {
-    doc.setFont('helvetica', style);
-    doc.text(T(t), W - M, 11 + i * 5, { align: 'right' });
-  });
+  pdfHeader(doc, settings, 'BESTILLING', `${fagperson} · ${formatDate(today())}`, '',
+    [[settings.bydel, 'bold'], [settings.kommune, 'normal']]);
 
   doc.setTextColor(20); doc.setFontSize(10); doc.setFont('helvetica', 'normal');
   const contact = [[settings.stilling, settings.navn].filter(Boolean).join(': '), settings.telefon, settings.epost].filter(Boolean).join(' · ');
@@ -736,11 +737,11 @@ function buildOrderPdf(fagperson, items, settings) {
       (d.beskrivelse || '-') + (nr.length ? ` (Bilde ${nr.join(', ')})` : ''),
       d.hast + (d.frist ? '\nFrist ' + formatDate(d.frist) : '')].map(T);
   });
-  doc.autoTable({
-    startY: y, margin: { left: M, right: M },
+  pdfTable(doc, {
+    startY: y,
     head: [['Adresse', 'Rom / punkt', 'Beskrivelse', 'Hast']], body,
-    headStyles: { fillColor: brand, fontSize: 8 }, styles: { fontSize: 8.5, cellPadding: 1.8, valign: 'top' },
-    columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold' }, 1: { cellWidth: 38 }, 3: { cellWidth: 26 } },
+    styles: { fontSize: 8.5 },
+    columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold', textColor: PDF.navy }, 1: { cellWidth: 38 }, 3: { cellWidth: 26 } },
     didParseCell: d => { if (d.section === 'body' && d.column.index === 3 && String(d.cell.raw).startsWith('Akutt')) { d.cell.styles.textColor = red; d.cell.styles.fontStyle = 'bold'; } },
   });
 
@@ -750,8 +751,7 @@ function buildOrderPdf(fagperson, items, settings) {
       const slot = i % 6;
       if (slot === 0) {
         doc.addPage();
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...brand);
-        doc.text('BILDER', M, 16);
+        pdfHeading(doc, 'BILDER', 16);
       }
       const x = M + (slot % 2) * (boxW + gap), top = 24 + Math.floor(slot / 2) * rowH;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(20);
@@ -763,13 +763,7 @@ function buildOrderPdf(fagperson, items, settings) {
     });
   }
 
-  const n = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= n; i++) {
-    doc.setPage(i);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...grey);
-    doc.text(T(`Bestilling · ${fagperson} · ${formatDate(today())}`), M, 290);
-    doc.text(`Side ${i} av ${n}`, W - M, 290, { align: 'right' });
-  }
+  pdfFooter(doc, `Bestilling · ${fagperson} · ${formatDate(today())}`);
   return doc;
 }
 
