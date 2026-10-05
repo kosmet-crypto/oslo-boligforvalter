@@ -12,7 +12,7 @@ Runs as a PWA (GitHub Pages) and as an Android APK (WebView wrapper) from the sa
 
 ## Hard rules
 - **No personal data in the repo.** Never put the owner's full name, bydel, addresses or other personal
-  details in code, defaults, tests or commit messages. The only credit is "Utviklet av Ivan St."
+  details in code, defaults, tests or commit messages. The only credit is "Utviklet av Ivan St. Epicurus001 – Oslo, Norge"
   (Innstillinger → Om appen, first-start screen and start-screen footer). Everything personal is
   entered by the user in the first-start wizard / Innstillinger.
 - **Tenant privacy (GDPR).** The PDF carries the tenant's full name (and phone, if typed). Everything
