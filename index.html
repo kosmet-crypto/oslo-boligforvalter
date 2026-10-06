@@ -428,7 +428,8 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
 
         <section class="card">
           <h2>Boligforvalter</h2>
-          <label class="f">Navn <input type="text" x-model="settings.navn" @change="saveSettings()" placeholder="Ditt navn"></label>
+          <label class="f">Fullt navn (fornavn og etternavn) <input type="text" x-model="settings.navn" @change="saveSettings()" placeholder="Fornavn Etternavn"></label>
+          <p class="claim frist" style="margin:-4px 0 10px" x-show="settings.navn.trim() && !settings.navn.trim().includes(' ')">Bare fornavn er fylt inn. Skriv også etternavn – navnet står i PDF-en og under signaturen.</p>
           <label class="f">Stilling <input type="text" x-model="settings.stilling" @change="saveSettings()"></label>
           <div class="grid2">
             <label class="f">Telefon <input type="tel" x-model="settings.telefon" @change="saveSettings()"></label>
@@ -797,7 +798,9 @@ footer { text-align: center; color: var(--muted); font-size: calc(12px * var(--f
             <div class="sig-label" style="margin-top:4px">Annen person til stede (valgfritt)</div>
             <div class="grid2">
               <label class="f" style="margin-bottom:0">Navn <input type="text" x-model="report.ekstra.navn" autocomplete="off"></label>
-              <label class="f" style="margin-bottom:0">Rolle <input type="text" x-model="report.ekstra.rolle" placeholder="F.eks. tolk, kollega" autocomplete="off"></label>
+              <label class="f" style="margin-bottom:0">Rolle <input type="text" x-model="report.ekstra.rolle" placeholder="Skriv selv eller velg" autocomplete="off" list="rolle-list"></label>
+              <datalist id="rolle-list"><option value="Kollega"></option><option value="Tolk"></option><option value="Verge"></option>
+                <option value="Pårørende"></option><option value="Vaktmester"></option><option value="Representant for leietaker"></option></datalist>
             </div>
           </section>
 
