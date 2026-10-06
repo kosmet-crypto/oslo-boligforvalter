@@ -1,7 +1,7 @@
 /* Oslo Boligforvalter: all logic for index.html (Alpine.js component + PDF). */
 
 // Bump on every change: the web version compares this with the published app.js to find updates.
-const WEB_VERSION = '2.4.0';
+const WEB_VERSION = '2.4.1';
 
 const REPORT_TYPES = ['Innflytting', 'Utflytting', 'Befaring'];
 const FAGPERSONER = ['Vaktmester', 'Elektriker', 'Rørlegger', 'Maler', 'Snekker', 'Flislegger',
@@ -554,11 +554,11 @@ function buildPdf(report, settings, roomLabel) {
   doc.roundedRect(M, y, W - 2 * M, 14, 2, 2, 'FD');
   doc.setFontSize(10); doc.setTextColor(20);
   doc.setFont('helvetica', 'bold');
-  const cols = [[`${st.checked}/${st.total}`, 'kontrollert'], [String(st.feil), 'avvik'], [String(photoList.length), 'bilder']];
+  const cols = [[String(st.feil), 'avvik'], [String(photoList.length), 'bilder']];
   cols.forEach(([big, small], i) => {
     const x = M + 6 + i * 42;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-    doc.setTextColor(...(i === 1 && st.feil ? red : [20, 20, 20]));
+    doc.setTextColor(...(i === 0 && st.feil ? red : [20, 20, 20]));
     doc.text(big, x, y + 9);
     const bigW = doc.getTextWidth(big);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...grey);
@@ -619,12 +619,6 @@ function buildPdf(report, settings, roomLabel) {
         d.cell.styles.textColor = d.cell.raw === 'AVVIK' ? red : PDF.green;
       },
     }) + 5;
-  }
-  const unchecked = st.total - st.checked;
-  if (unchecked) {
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(...grey);
-    doc.text(`${unchecked} punkt(er) ble ikke kontrollert og er utelatt.`, M, y + 1);
-    y += 6;
   }
 
   // General remark

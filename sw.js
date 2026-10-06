@@ -1,5 +1,5 @@
 /* Offline support. Bump VERSION whenever any file in SHELL changes. */
-const VERSION = 'bolig-v6';
+const VERSION = 'bolig-v7';
 const SHELL = [
   './',
   './index.html',
